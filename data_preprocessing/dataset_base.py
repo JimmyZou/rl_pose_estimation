@@ -14,7 +14,7 @@ class BaseDataset(object):
         """
         self.subset = subset
         # fx, fy: focal length, cx, cy: center of the camera, w, h: width and height of images
-        self.camera_cfg = namedtuple('CameraConfig', 'fx, fy, cx, cy, w, h')
+        self.Camera = namedtuple('Camera', ['fx', 'fy', 'cx', 'cy', 'w', 'h'])
         # filename is the filename of an image, pose is its corresponding annotations
         self.annotation = namedtuple('annotation', 'filename, pose')
 

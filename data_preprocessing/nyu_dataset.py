@@ -3,6 +3,7 @@ import pickle, os, glob, time, cv2
 import numpy as np
 from collections import namedtuple
 from scipy.io import loadmat
+import utils
 
 
 class NYUDataset(BaseDataset):
@@ -11,7 +12,7 @@ class NYUDataset(BaseDataset):
 
         # bbx denotes bounding box
         self._annotations = []
-        self.camera_cfg(fx=588.235, fy=587.084, cx=320, cy=240, w=640, h=480)
+        self.camera_cfg = self.Camera(fx=588.235, fy=587.084, cx=320, cy=240, w=640, h=480)
         self.num_per_file = 730
         self.max_depth = 1500.0
         self.root_dir = root_dir
@@ -46,10 +47,10 @@ class NYUDataset(BaseDataset):
 
         for c_j, c_file in zip(joints, filenames):
             for j, n in zip(c_j, c_file):
-                j = j.reshape((-1, 3))
-                # TODO: inverse Y axis?
-                j[:, 1] *= -1.0
-                j = j.reshape((-1,))
+                # j = j.reshape((-1, 3))
+                # # TODO: inverse Y axis?
+                # j[:, 1] *= -1.0
+                # j = j.reshape((-1,))
                 self._annotations.append(self.annotation(n, j))
         print('[data.NyuDataset] annotation has been loaded with %d samples, %fs' %
               (len(self._annotations), time.time() - time_begin))
@@ -58,6 +59,10 @@ class NYUDataset(BaseDataset):
         # The top 8 bits of depth are packed into green and the lower 8 bits into blue.
         g, b = img_data[:, :, 1].astype(np.uint16), img_data[:, :, 2].astype(np.uint16)
         depth_img = (g * 256 + b).astype(np.float32)
+
+        # print(self.camera_cfg)
+        utils.plot_depth_img(depth_img, self.camera_cfg, self.max_depth)
+
         return depth_img
 
     def preprocessing(self, example):

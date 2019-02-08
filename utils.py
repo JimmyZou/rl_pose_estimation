@@ -1,10 +1,11 @@
 import numpy as np
-import scipy.io as sio
+from scipy.io import loadmat, savemat
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib import animation, rc
+
 
 def rotmat2expmap(R):
     # R to omega
@@ -202,3 +203,70 @@ class plot_human(object):
     def plot(self):
         ani = FuncAnimation(self.fig, self.update, frames=self.nframes, interval=40)
         plt.show()
+
+
+def plot_3d_points(data):
+    # data [num_points, 3]
+    data[:, 1] = - data[:, 1]
+    x_min, x_max = np.min(data[:, 0]), np.max(data[:, 0])
+    y_min, y_max = np.min(data[:, 1]), np.max(data[:, 1])
+    z_min, z_max = np.min(data[:, 2]), np.max(data[:, 2])
+    plt.figure()
+    ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
+    ax.scatter(data[:, 0], data[:, 2], data[:, 1], color='b', marker='.', s=1)
+    ax.set_xlabel('x')
+    ax.set_ylabel('z')
+    ax.set_zlabel('y')
+    ax.grid()
+    plt.show()
+
+
+def plot_depth_img(depth_img, camera_cfg, max_depth):
+    # plot 2d gray image
+    _depth_img = depth_img / np.max(depth_img)
+    plt.figure()
+    plt.imshow(_depth_img, cmap="gray")
+    plt.axis('off')
+    plt.show()
+
+    # plot 3d points
+    uvd = depth2uvd(depth_img)
+    xyz = uvd2xyz(uvd, camera_cfg)
+    points = np.reshape(xyz, [-1, 3])
+    body_points = points[(points[:, 2] < max_depth), :]
+    plot_3d_points(body_points)
+
+
+def depth2uvd(depth):
+    x, y = np.meshgrid(np.linspace(0, depth.shape[1] - 1, depth.shape[1]),
+                       np.linspace(0, depth.shape[0] - 1, depth.shape[0]))
+    uvd = np.stack([x.astype(np.uint16), y.astype(np.uint16), depth], axis=2)
+    return uvd
+
+
+def uvd2xyz(uvd, camera_cfg):
+    # fx, fy, cx, cy, w, h
+    # 0,  1,  2,  3,  4, 5
+    # z = d
+    # x = (u - cx) * d / fx
+    # y = (v - cy) * d / fy
+    w, h = uvd.shape[0], uvd.shape[1]
+    _bpro = lambda pt2, cfg : [(pt2[0] - cfg[2]) * pt2[2] / cfg[0], (pt2[1] - cfg[3]) * pt2[2] / cfg[1], pt2[2]]
+    uvd = np.reshape(uvd, [-1, 3])
+    xyz = [_bpro(pt2, camera_cfg) for pt2 in uvd]
+    return np.reshape(np.array(xyz), [w, h, 3])
+
+
+def xyz2uvd(xyz, camera_cfg):
+    # fx, fy, cx, cy, w, h
+    # 0,  1,  2,  3,  4, 5
+    # d = z
+    # u = fx * x / z + cx
+    # v = fy * y / z + cy
+    w, h = xyz.shape[0], xyz.shape[1]
+    _pro = lambda pt3, cfg: [pt3[0] * cfg[0] / pt3[2] + cfg[2], pt3[1] * cfg[1] / pt3[2] + cfg[3], pt3[2]]
+    xyz = xyz.reshape((-1, 3))
+    # perspective projection function
+    uvd = [_pro(pt3, camera_cfg) for pt3 in xyz]
+    return np.reshape(np.array(uvd), [w, h, 3])
+
