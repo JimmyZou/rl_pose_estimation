@@ -221,11 +221,13 @@ def plot_3d_points(data):
     plt.show()
 
 
-def plot_depth_img(depth_img, camera_cfg, max_depth):
+def plot_depth_img(depth_img, jnt_uvd, camera_cfg, max_depth):
     # plot 2d gray image
     _depth_img = depth_img / np.max(depth_img)
     plt.figure()
     plt.imshow(_depth_img, cmap="gray")
+    if jnt_uvd is not None:
+        plt.scatter(jnt_uvd[:, 0], jnt_uvd[:, 1], c='b', s=5)
     plt.axis('off')
     plt.show()
 
@@ -250,11 +252,10 @@ def uvd2xyz(uvd, camera_cfg):
     # z = d
     # x = (u - cx) * d / fx
     # y = (v - cy) * d / fy
-    w, h = uvd.shape[0], uvd.shape[1]
     _bpro = lambda pt2, cfg : [(pt2[0] - cfg[2]) * pt2[2] / cfg[0], (pt2[1] - cfg[3]) * pt2[2] / cfg[1], pt2[2]]
     uvd = np.reshape(uvd, [-1, 3])
     xyz = [_bpro(pt2, camera_cfg) for pt2 in uvd]
-    return np.reshape(np.array(xyz), [w, h, 3])
+    return np.array(xyz)
 
 
 def xyz2uvd(xyz, camera_cfg):
@@ -263,10 +264,9 @@ def xyz2uvd(xyz, camera_cfg):
     # d = z
     # u = fx * x / z + cx
     # v = fy * y / z + cy
-    w, h = xyz.shape[0], xyz.shape[1]
     _pro = lambda pt3, cfg: [pt3[0] * cfg[0] / pt3[2] + cfg[2], pt3[1] * cfg[1] / pt3[2] + cfg[3], pt3[2]]
     xyz = xyz.reshape((-1, 3))
     # perspective projection function
     uvd = [_pro(pt3, camera_cfg) for pt3 in xyz]
-    return np.reshape(np.array(uvd), [w, h, 3])
+    return np.array(uvd)
 

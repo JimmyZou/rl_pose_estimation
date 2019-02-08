@@ -4,6 +4,7 @@ import numpy as np
 from collections import namedtuple
 from scipy.io import loadmat
 import utils
+import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
@@ -47,10 +48,9 @@ class NYUDataset(BaseDataset):
 
         for c_j, c_file in zip(joints, filenames):
             for j, n in zip(c_j, c_file):
-                # j = j.reshape((-1, 3))
-                # # TODO: inverse Y axis?
-                # j[:, 1] *= -1.0
-                # j = j.reshape((-1,))
+                j = j.reshape((-1, 3))
+                j[:, 1] *= -1.0
+                j = j.reshape((-1,))
                 self._annotations.append(self.annotation(n, j))
         print('[data.NyuDataset] annotation has been loaded with %d samples, %fs' %
               (len(self._annotations), time.time() - time_begin))
@@ -59,13 +59,10 @@ class NYUDataset(BaseDataset):
         # The top 8 bits of depth are packed into green and the lower 8 bits into blue.
         g, b = img_data[:, :, 1].astype(np.uint16), img_data[:, :, 2].astype(np.uint16)
         depth_img = (g * 256 + b).astype(np.float32)
-
-        # print(self.camera_cfg)
-        utils.plot_depth_img(depth_img, self.camera_cfg, self.max_depth)
-
+        # utils.plot_depth_img(depth_img, None, self.camera_cfg, self.max_depth)
         return depth_img
 
-    def preprocessing(self, example):
+    def crop_from_xyz_pose(self, example):
         # crop_from_xyz_pose
         pass
 
@@ -73,10 +70,12 @@ class NYUDataset(BaseDataset):
         """
         convert one example (image and pose) to target format
         """
-        img_dir = os.path.join(self.img_dir, label.name)
+        img_dir = os.path.join(self.img_dir, label.filename)
         img_data = cv2.imread(img_dir, -1)
         depth_img = self._decode_png(img_data)
-        example = self.preprocessing(label.name, depth_img, label.pose)
+        # example = self.crop_from_xyz_pose(label.name, depth_img, label.pose)
+        jnt_uvd = utils.xyz2uvd(label.pose, self.camera_cfg)
+        utils.plot_depth_img(depth_img, jnt_uvd, self.camera_cfg, self.max_depth)
 
 
 
@@ -89,9 +88,9 @@ class NYUDataset(BaseDataset):
 def in_test():
     # reader = NyuDataset('training')
     # reader.write_TFRecord_multi_thread(num_threads=30, num_shards=300)
-    reader = NYUDataset('training')
-    img = cv2.imread('../test.png')
-    reader._decode_png(img)
+    reader = NYUDataset('testing')
+    reader.load_annotation()
+    reader.convert_to_example(reader._annotations[0])
 
 
 
