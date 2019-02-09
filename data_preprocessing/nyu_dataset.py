@@ -10,7 +10,7 @@ class NYUDataset(BaseDataset):
     def __init__(self, subset, num_cpu=4, num_imgs_per_file=700, root_dir="../../data/nyu/"):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
-        self.camera_cfg = self.Camera(fx=588.235, fy=587.084, cx=320, cy=240, w=640, h=480)
+        self.camera_cfg = (588.235, 587.084, 320, 240, 640, 480)
         self.num_per_file = 730
         self.max_depth = 1500.0
         self.root_dir = root_dir
@@ -57,8 +57,7 @@ class NYUDataset(BaseDataset):
                 j = j.reshape((-1, 3))
                 j[:, 1] *= -1.0
                 j = j.reshape((-1,))
-                self._annotations.append(self.annotation(n, j))
-        self._annotations = self._annotations[0:25]  # TODO
+                self._annotations.append((n, j))
         print('[data.%sDataset] annotation has been loaded with %d samples, %fs' %
               (self.dataset, len(self._annotations), time.time() - time_begin))
 
@@ -96,7 +95,8 @@ class NYUDataset(BaseDataset):
         return:
             a tuple: (filename, xyz_pose, depth_img, bbox, cropped_points)
         """
-        img_dir = os.path.join(self.img_dir, label.filename)
+        filename, pose = label
+        img_dir = os.path.join(self.img_dir, filename)
         img_data = cv2.imread(img_dir, -1)  # BGR order
         depth_img = self._decode_png(img_data)
 
@@ -105,7 +105,7 @@ class NYUDataset(BaseDataset):
         # utils.plot_annotated_depth_img(depth_img, jnt_uvd, self.camera_cfg, self.max_depth)
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
-        return self.crop_from_xyz_pose(label.filename, depth_img, label.pose)
+        return self.crop_from_xyz_pose(filename, depth_img, pose)
 
 
 

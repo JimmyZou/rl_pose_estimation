@@ -13,11 +13,11 @@ class BaseDataset(object):
         subset: e.g., train, validation, test
         """
         self.subset = subset
+        # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
         # fx, fy: focal length, cx, cy: center of the camera, w, h: width and height of images
-        self.Camera = namedtuple('Camera', ['fx', 'fy', 'cx', 'cy', 'w', 'h'])
+        self.camera_cfg = ()
+        # self._annotations is a list of tuples (filename, annotation)
         # filename is the filename of an image, pose is its corresponding annotations
-        self.annotation = namedtuple('annotation', 'filename, pose')
-        # some variables
         self._annotations = []
         self.num_imgs_per_file = num_imgs_per_file
         self.num_cpus = num_cpus
@@ -78,8 +78,5 @@ class BaseDataset(object):
         pool.close()
         pool.join()
         print('[data.%sDataset] multi-processing ends, %fs' % (self.dataset, time.time() - time_begin))
-
-        for r in results:
-            print('return:', r.get())
 
 
