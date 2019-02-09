@@ -221,32 +221,44 @@ def plot_3d_points(data):
     plt.show()
 
 
-def plot_depth_img(depth_img, jnt_uvd, camera_cfg, max_depth):
+def plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points):
+    x_min, x_max, y_min, y_max, z_min, z_max = bbx
+    plt.figure()
+    ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
+    ax.scatter(cropped_points[:, 0], cropped_points[:, 2], cropped_points[:, 1], color='b', marker='.', s=0.8,
+               alpha=0.5)
+    ax.scatter(xyz_pose[:, 0], xyz_pose[:, 2], xyz_pose[:, 1], color='r', marker='o', s=20)
+    # ax.view_init(elev=0, azim=270)
+    ax.set_xlabel('x')
+    ax.set_ylabel('z')
+    ax.set_zlabel('y')
+    plt.show()
+
+
+def plot_annotated_depth_img(depth_img, jnt_uvd, camera_cfg, max_depth):
     # plot 2d gray image
     _depth_img = depth_img / np.max(depth_img)
     plt.figure()
     plt.imshow(_depth_img, cmap="gray")
     if jnt_uvd is not None:
-        plt.scatter(jnt_uvd[:, 0], jnt_uvd[:, 1], c='b', s=5)
+        plt.scatter(jnt_uvd[:, 0], jnt_uvd[:, 1], c='b', s=3)
     plt.axis('off')
     plt.show()
-
-    # plot 3d points
-    uvd = depth2uvd(depth_img)
-    xyz = uvd2xyz(uvd, camera_cfg)
-    points = np.reshape(xyz, [-1, 3])
-    body_points = points[(points[:, 2] < max_depth), :]
-    plot_3d_points(body_points)
 
 
 def depth2uvd(depth):
     x, y = np.meshgrid(np.linspace(0, depth.shape[1] - 1, depth.shape[1]),
                        np.linspace(0, depth.shape[0] - 1, depth.shape[0]))
-    uvd = np.stack([x.astype(np.uint16), y.astype(np.uint16), depth], axis=2)
+    uvd = np.stack([x, y, depth], axis=2)
     return uvd
 
 
 def uvd2xyz(uvd, camera_cfg):
+    """
+    convert uvd coordinates to xyz
+    return:
+        points in xyz coordinates, shape [N, 3]
+    """
     # fx, fy, cx, cy, w, h
     # 0,  1,  2,  3,  4, 5
     # z = d
