@@ -221,21 +221,22 @@ def plot_3d_points(data):
     plt.show()
 
 
-def plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points):
+def plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points, view=None):
     x_min, x_max, y_min, y_max, z_min, z_max = bbx
     plt.figure()
     ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
-    ax.scatter(cropped_points[:, 0], cropped_points[:, 2], cropped_points[:, 1], color='b', marker='.', s=0.8,
+    ax.scatter(cropped_points[:, 0], cropped_points[:, 2], cropped_points[:, 1], color='b', marker='.', s=1,
                alpha=0.5)
     ax.scatter(xyz_pose[:, 0], xyz_pose[:, 2], xyz_pose[:, 1], color='r', marker='o', s=20)
-    # ax.view_init(elev=0, azim=270)
+    if view is not None:
+        ax.view_init(elev=view[0], azim=view[1])
     ax.set_xlabel('x')
     ax.set_ylabel('z')
     ax.set_zlabel('y')
     plt.show()
 
 
-def plot_annotated_depth_img(depth_img, jnt_uvd, camera_cfg, max_depth):
+def plot_annotated_depth_img(depth_img, jnt_uvd):
     # plot 2d gray image
     _depth_img = depth_img / np.max(depth_img)
     plt.figure()

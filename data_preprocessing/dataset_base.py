@@ -1,7 +1,6 @@
-import numpy as np
-from collections import namedtuple
-from datetime import datetime
-import time, os, sys, pickle, cv2, glob, multiprocessing
+import time
+import pickle
+import multiprocessing
 
 
 class BaseDataset(object):
@@ -64,9 +63,13 @@ class BaseDataset(object):
             print('[data.%sDataset] File %s is saved.' % (self.dataset, store_dir + str(stored_file_idx) + '.pkl'))
 
     def store_multi_processors(self, store_dir):
-        print('[data.%sDataset] multi-processors start...' % self.dataset)
+        print('[data.%sDataset] multi-processing starts...' % self.dataset)
         time_begin = time.time()
         N = len(self._annotations)
+        if self.subset == 'testing':
+            tag = 'test'
+        else:
+            tag = 'train'
         num_files = N // self.num_imgs_per_file + 1
         file_idxes = [(j * self.num_imgs_per_file, min((j + 1) * self.num_imgs_per_file, N)) for j in range(num_files)]
 
@@ -74,9 +77,16 @@ class BaseDataset(object):
         pool = multiprocessing.Pool(self.num_cpus)
         for i in range(num_files):
             results.append(pool.apply_async(self.store_preprocessed_data_per_file,
-                                     (self._annotations[file_idxes[i][0]: file_idxes[i][1]], i, store_dir, )))
+                                            (self._annotations[file_idxes[i][0]: file_idxes[i][1]],
+                                             '%s-%i-%i' % (tag, i, self.num_imgs_per_file), store_dir,)))
         pool.close()
         pool.join()
+        pool.terminate()
+
+        for result in results:
+            tmp = result.get()
+            if tmp is not None:
+                print(tmp)
         print('[data.%sDataset] multi-processing ends, %fs' % (self.dataset, time.time() - time_begin))
 
 

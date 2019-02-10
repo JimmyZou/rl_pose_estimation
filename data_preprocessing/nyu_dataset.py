@@ -1,9 +1,10 @@
 from data_preprocessing.dataset_base import BaseDataset
-import pickle, os, glob, time, cv2, pickle, multiprocessing
+import os
+import time
+import cv2
 import numpy as np
 from scipy.io import loadmat
 import utils
-import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
@@ -11,7 +12,6 @@ class NYUDataset(BaseDataset):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         self.camera_cfg = (588.235, 587.084, 320, 240, 640, 480)
-        self.num_per_file = 730
         self.max_depth = 1500.0
         self.root_dir = root_dir
         self.num_imgs_per_file = num_imgs_per_file
@@ -79,7 +79,7 @@ class NYUDataset(BaseDataset):
         # crop image
         depth_uvd = utils.depth2uvd(depth_img)
         depth_xyz = utils.uvd2xyz(depth_uvd, self.camera_cfg)
-        depth_xyz = depth_xyz[(depth_xyz[:, 2] < self.max_depth), :]
+        depth_xyz = depth_xyz[(depth_xyz[:, 2] < self.max_depth) & (depth_xyz[:, 2] > 0), :]
         crop_idxes = (x_min < depth_xyz[:, 0]) & (depth_xyz[:, 0] < x_max) & \
                      (y_min < depth_xyz[:, 1]) & (depth_xyz[:, 1] < y_max) & \
                      (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
@@ -108,12 +108,13 @@ class NYUDataset(BaseDataset):
         return self.crop_from_xyz_pose(filename, depth_img, pose)
 
 
-
 def in_test():
     reader = NYUDataset(subset='testing', num_cpu=4, num_imgs_per_file=7)
     reader.load_annotation()
+    # for i in range(10):
+    #     reader.convert_to_example(reader._annotations[i])
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    reader.store_multi_processors(reader.store_dir)
+    # reader.store_multi_processors(reader.store_dir)
 
 
 
