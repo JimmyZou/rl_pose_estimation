@@ -89,7 +89,8 @@ def inverse_kinematics(joint_xyz, config):
             lie_parameters[i, index[k][0], 3:6] = joint_xyz[i, index[k][0], :]
 
             for j in range(len(index[k])-1):
-                lie_parameters[i, index[k][j+1], 3] = np.linalg.norm(joint_xyz[i, index[k][j+1], :] - joint_xyz[i, index[k][j], :])
+                lie_parameters[i, index[k][j+1], 3] = np.linalg.norm(
+                    joint_xyz[i, index[k][j+1], :] - joint_xyz[i, index[k][j], :])
 
             for j in range(len(index[k])-2, -1, -1):
                 v = np.squeeze(joint_xyz[i, index[k][j+1], :] - joint_xyz[i, index[k][j], :])
@@ -222,9 +223,12 @@ def plot_3d_points(data):
 
 
 def plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points, view=None):
-    x_min, x_max, y_min, y_max, z_min, z_max = bbx
     plt.figure()
-    ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
+    if bbx is None:
+        ax = plt.axes(projection='3d')
+    else:
+        x_min, x_max, y_min, y_max, z_min, z_max = bbx
+        ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
     ax.scatter(cropped_points[:, 0], cropped_points[:, 2], cropped_points[:, 1], color='b', marker='.', s=1,
                alpha=0.5)
     ax.scatter(xyz_pose[:, 0], xyz_pose[:, 2], xyz_pose[:, 1], color='r', marker='o', s=20)

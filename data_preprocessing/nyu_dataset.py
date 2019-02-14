@@ -48,8 +48,9 @@ class NYUDataset(BaseDataset):
         # print('%i joints names:' % self.jnt_num, joint_data['joint_names'])
         camera_num = 1 if self.subset == 'testing' else 3
         joints = [joint_data['joint_xyz'][idx] for idx in range(camera_num)]
-        filenames = [['depth_{}_{:07d}.png'.format(camera_idx+1, idx+1) for idx in range(joints[camera_idx].shape[0])]
-                     for camera_idx in range(camera_num)]
+        filenames = [
+            ['depth_{}_{:07d}.png'.format(camera_idx + 1, idx + 1) for idx in range(joints[camera_idx].shape[0])]
+            for camera_idx in range(camera_num)]
 
         for c_j, c_file in zip(joints, filenames):
             for j, n in zip(c_j, c_file):
@@ -84,9 +85,9 @@ class NYUDataset(BaseDataset):
                      (y_min < depth_xyz[:, 1]) & (depth_xyz[:, 1] < y_max) & \
                      (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
         cropped_points = depth_xyz[crop_idxes, :]
-        # utils.plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points)
-
         example = (filename, xyz_pose, depth_img, bbx, cropped_points)
+
+        # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
         return example
 
     def convert_to_example(self, label):
@@ -105,19 +106,33 @@ class NYUDataset(BaseDataset):
         # utils.plot_annotated_depth_img(depth_img, jnt_uvd, self.camera_cfg, self.max_depth)
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
-        return self.crop_from_xyz_pose(filename, depth_img, pose)
+        example = self.crop_from_xyz_pose(filename, depth_img, pose)
+        utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
+
+        # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx,
+        # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
+        preprocessed_example = self.consistent_orientation(example)
+        utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
+
+        # import matplotlib.pyplot as plt
+        # plt.figure()
+        # plt.scatter(preprocessed_example[6][:, 0], preprocessed_example[6][:, 1],
+        #             color='b', marker='.', s=2, alpha=0.5)
+        # plt.scatter(preprocessed_example[5][:, 0], preprocessed_example[5][:, 1], color='r', marker='.', s=10)
+        # plt.show()
+
+        return preprocessed_example
 
 
 def in_test():
     reader = NYUDataset(subset='testing', num_cpu=4, num_imgs_per_file=7)
     reader.load_annotation()
-    # for i in range(10):
-    #     reader.convert_to_example(reader._annotations[i])
+    for i in range(3):
+        print(reader._annotations[i * 1030][0])
+        reader.convert_to_example(reader._annotations[i * 1030])
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     # reader.store_multi_processors(reader.store_dir)
 
 
-
 if __name__ == '__main__':
     in_test()
-

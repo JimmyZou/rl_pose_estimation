@@ -1,6 +1,8 @@
 import time
 import pickle
 import multiprocessing
+from sklearn.decomposition import PCA
+import numpy as np
 
 
 class BaseDataset(object):
@@ -21,6 +23,7 @@ class BaseDataset(object):
         self.num_imgs_per_file = num_imgs_per_file
         self.num_cpus = num_cpus
         self.dataset = 'Empty'
+        self.pca = PCA()
 
     def load_annotation(self):
         raise NotImplementedError
@@ -44,11 +47,27 @@ class BaseDataset(object):
         """
         raise NotImplemented
 
-    def preprocess(self):
-        """
-        preprocess an namedtuple example to targeted format
-        """
-        raise NotImplemented
+    def consistent_orientation(self, example):
+        filename, xyz_pose, depth_img, pose_bbx, cropped_points = example
+
+        self.pca.fit(cropped_points)
+        coeff = self.pca.components_.T
+        if coeff[1, 0] < 0:
+            coeff[:, 0] = - coeff[:, 0]
+        if coeff[2, 2] < 0:
+            coeff[:, 2] = - coeff[:, 2]
+        coeff[:, 1] = np.cross(coeff[:, 0], coeff[:, 2])
+        rotated_points = np.dot(cropped_points, coeff)
+        rotated_pose = np.dot(xyz_pose, coeff)
+        x_min, x_max = np.min(rotated_points[:, 0]), np.max(rotated_points[:, 0])
+        y_min, y_max = np.min(rotated_points[:, 1]), np.max(rotated_points[:, 1])
+        z_min, z_max = np.min(rotated_points[:, 2]), np.max(rotated_points[:, 2])
+        rotated_bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
+        normalized_rotate_points = rotated_points - np.array([[x_min, y_min, z_min]])
+        normalized_rotate_pose = rotated_pose - np.array([[x_min, y_min, z_min]])
+
+        return (filename, xyz_pose, depth_img, pose_bbx,
+                coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
 
     def store_preprocessed_data_per_file(self, annotations, stored_file_idx, store_dir):
         """
@@ -56,7 +75,6 @@ class BaseDataset(object):
         """
         stored_data = []
         for label in annotations:
-            # TODO: preprocess a sample, namedtuple('sample', 'filename, xyz_pose, depth_img, bbox, cropped_points')
             stored_data.append(self.convert_to_example(label))
         with open(store_dir + str(stored_file_idx) + '.pkl', 'wb') as f:
             pickle.dump(stored_data, f)
