@@ -37,30 +37,11 @@
 # # anim.to_html5_video()
 # anim.save('basic_animation.html')
 
-import numpy as np
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
+def func(x):
+    for i in x:
+        yield i
 
-X = np.array([[-1, -1], [-2, -1], [-3, -2], [1, 1], [2, 1], [3, 2]])
-plt.figure()
-plt.subplot(121)
-plt.scatter(X[:, 0], X[:, 1])
-
-
-pca = PCA(n_components=2)
-pca.fit(X)
-
-pca_score = pca.explained_variance_ratio_
-V = pca.components_
-
-rotated_X = np.dot(X, pca.components_.T)
-# rotated_X = pca.fit_transform(X)
-plt.subplot(122)
-plt.scatter(rotated_X[:, 0], rotated_X[:, 1])
-plt.show()
-
-print(np.dot(rotated_X, pca.components_))
-print(pca.components_)
-print(pca.explained_variance_ratio_)
-print(pca.singular_values_)
-
+x = [1,2,3,4]
+a = func(x)
+for j in func(x):
+    print(j)

@@ -4,7 +4,7 @@ import time
 import cv2
 import numpy as np
 from scipy.io import loadmat
-import utils
+import glob
 
 
 class NYUDataset(BaseDataset):
@@ -17,20 +17,27 @@ class NYUDataset(BaseDataset):
         self.num_imgs_per_file = num_imgs_per_file
         self.dataset = 'NYU'
 
-        if self.subset in ['training', 'validation', 'training_small']:
+        if self.subset in ['pps-training']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/train/')
             assert os.path.exists(self.src_dir)
             self.img_dir = self.src_dir
             self.store_dir = os.path.join(self.root_dir, 'train_data_ppsd/')
-        elif self.subset in ['testing']:
+        elif self.subset in ['pps-testing']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/test/')
             assert os.path.exists(self.src_dir)
             self.img_dir = self.src_dir
             self.store_dir = os.path.join(self.root_dir, 'test_data_ppsd/')
+        elif self.subset in ['training']:
+            self.train_files = glob.glob(self.root_dir + 'train_data_ppsd/')
+            self.test_files = glob.glob(self.root_dir + 'test_data_ppsd/')
         else:
             raise ValueError('Unknown subset %s to NYU hand datset' % subset)
 
-        if not os.path.exists(self.store_dir):
+        if os.path.exists(self.store_dir):
+            # for training or testing after pre-processing
+            self.file_list = glob.glob(self.store_dir)
+            print('[NyuDataset] %d %s files are loaded from %s' % (len(self.file_list), self.subset, self.store_dir))
+        else:
             os.makedirs(self.store_dir)
             print('File %s is created to save preprocessed data.' % self.store_dir)
 
@@ -69,32 +76,9 @@ class NYUDataset(BaseDataset):
         # utils.plot_depth_img(depth_img, None, self.camera_cfg, self.max_depth)
         return depth_img
 
-    def crop_from_xyz_pose(self, filename, depth_img, pose, pad=20):
-        # bounding box
-        xyz_pose = np.reshape(pose, [-1, 3])
-        x_min, x_max = np.min(xyz_pose[:, 0]) - pad, np.max(xyz_pose[:, 0]) + pad
-        y_min, y_max = np.min(xyz_pose[:, 1]) - pad, np.max(xyz_pose[:, 1]) + pad
-        z_min, z_max = np.min(xyz_pose[:, 2]) - pad, np.max(xyz_pose[:, 2]) + pad
-        bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
-
-        # crop image
-        depth_uvd = utils.depth2uvd(depth_img)
-        depth_xyz = utils.uvd2xyz(depth_uvd, self.camera_cfg)
-        depth_xyz = depth_xyz[(depth_xyz[:, 2] < self.max_depth) & (depth_xyz[:, 2] > 0), :]
-        crop_idxes = (x_min < depth_xyz[:, 0]) & (depth_xyz[:, 0] < x_max) & \
-                     (y_min < depth_xyz[:, 1]) & (depth_xyz[:, 1] < y_max) & \
-                     (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
-        cropped_points = depth_xyz[crop_idxes, :]
-        example = (filename, xyz_pose, depth_img, bbx, cropped_points)
-
-        # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
-        return example
-
     def convert_to_example(self, label):
         """
         convert one example (image and pose) to target format
-        return:
-            a tuple: (filename, xyz_pose, depth_img, bbox, cropped_points)
         """
         filename, pose = label
         img_dir = os.path.join(self.img_dir, filename)
@@ -107,12 +91,12 @@ class NYUDataset(BaseDataset):
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
-        utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
+        # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx,
         # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
         preprocessed_example = self.consistent_orientation(example)
-        utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
+        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
 
         # import matplotlib.pyplot as plt
         # plt.figure()
@@ -125,13 +109,13 @@ class NYUDataset(BaseDataset):
 
 
 def in_test():
-    reader = NYUDataset(subset='testing', num_cpu=4, num_imgs_per_file=7)
+    reader = NYUDataset(subset='testing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    for i in range(3):
-        print(reader._annotations[i * 1030][0])
-        reader.convert_to_example(reader._annotations[i * 1030])
+    # for i in range(3):
+    #     print(reader._annotations[i * 1030][0])
+    #     reader.convert_to_example(reader._annotations[i * 1030])
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    # reader.store_multi_processors(reader.store_dir)
+    reader.store_multi_processors(reader.store_dir)
 
 
 if __name__ == '__main__':

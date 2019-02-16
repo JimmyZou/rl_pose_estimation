@@ -3,14 +3,13 @@ import os
 import time
 import numpy as np
 import pickle
-import utils
 import struct
 import multiprocessing
-import matplotlib.pyplot as plt
+import glob
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=100, root_dir="../../data/msra15/"):
+    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/msra15/"):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -19,9 +18,10 @@ class MRSADataset(BaseDataset):
         self.root_dir = root_dir
         self.num_imgs_per_file = num_imgs_per_file
         self.dataset = 'MRSA15'
-        # self.fold_list = ['P0', 'P8']  # ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']
         self.fold_list = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']
         self.pose_list = '1 2 3 4 5 6 7 8 9 I IP L MP RP T TIP Y'.split(' ')
+        self.test_fold = test_fold  # for cross validation
+        assert self.test_fold in self.fold_list
 
         if self.subset in ['pre-processing']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/')
@@ -31,10 +31,12 @@ class MRSADataset(BaseDataset):
             if not os.path.exists(self.store_dir):
                 os.makedirs(self.store_dir)
                 print('File %s is created to save preprocessed data.' % self.store_dir)
-        elif self.subset in ['cross_validation']:
-            # TODO: for nine-fold cross validation
+        elif self.subset in ['training']:
             self.src_dir = os.path.join(self.root_dir, 'data_ppsd/')
             assert os.path.exists(self.src_dir)
+            all_files = glob.glob(self.src_dir + 'P*')
+            self.train_files = [file for file in all_files if ('/%s-' % self.test_fold) not in file]
+            self.test_files = [file for file in all_files if ('/%s-' % self.test_fold) in file]
         else:
             raise ValueError('Unknown subset %s to MRSA15 hand datset' % subset)
 
@@ -87,32 +89,9 @@ class MRSADataset(BaseDataset):
             print('[warning] %s is empty' % filename)
         return depth_img, cropped_depth_img, bbx
 
-    def crop_from_xyz_pose(self, filename, depth_img, pose, pad=20):
-        # bounding box
-        xyz_pose = np.reshape(pose, [-1, 3])
-        x_min, x_max = np.min(xyz_pose[:, 0]) - pad, np.max(xyz_pose[:, 0]) + pad
-        y_min, y_max = np.min(xyz_pose[:, 1]) - pad, np.max(xyz_pose[:, 1]) + pad
-        z_min, z_max = np.min(xyz_pose[:, 2]) - pad, np.max(xyz_pose[:, 2]) + pad
-        bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
-
-        # crop image
-        depth_uvd = utils.depth2uvd(depth_img)
-        depth_xyz = utils.uvd2xyz(depth_uvd, self.camera_cfg)
-        depth_xyz = depth_xyz[(depth_xyz[:, 2] < self.max_depth) & (depth_xyz[:, 2] > 0), :]
-        crop_idxes = (x_min < depth_xyz[:, 0]) & (depth_xyz[:, 0] < x_max) & \
-                     (y_min < depth_xyz[:, 1]) & (depth_xyz[:, 1] < y_max) & \
-                     (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
-        cropped_points = depth_xyz[crop_idxes, :]
-
-        # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
-        example = (filename, xyz_pose, depth_img, bbx, cropped_points)
-        return example
-
     def convert_to_example(self, label):
         """
         convert one example (image and pose) to target format
-        return:
-            a tuple: (filename, xyz_pose, depth_img, bbox, cropped_points, mrsa_shape)
         """
         filename, pose = label
         depth_img, cropped_depth_img, mrsa_shape = self._bin2depth(filename)
@@ -123,12 +102,12 @@ class MRSADataset(BaseDataset):
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
-        utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
+        # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx,
         # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
         preprocessed_example = self.consistent_orientation(example)
-        utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
+        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
 
         # import matplotlib.pyplot as plt
         # plt.figure()
@@ -172,7 +151,7 @@ class MRSADataset(BaseDataset):
         pool = multiprocessing.Pool(self.num_cpus)
         for i, filename in enumerate(filenames):
             results.append(pool.apply_async(self.store_preprocessed_data_per_file,
-                             (self._annotations[file_idxes[i]: file_idxes[i + 1]], filename, store_dir, )))
+                        (self._annotations[file_idxes[i]: file_idxes[i + 1]], filename, store_dir, )))
         pool.close()
         pool.join()
         pool.terminate()
@@ -185,13 +164,13 @@ class MRSADataset(BaseDataset):
 
 
 def in_test():
-    reader = MRSADataset(subset='pre-processing', num_cpu=4, num_imgs_per_file=100)
+    reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    for i in range(5):
-        print(reader._annotations[i * 500 + 2510][0])
-        reader.convert_to_example(reader._annotations[i * 500 + 10])
+    # for i in range(5):
+    #     print(reader._annotations[i * 500 + 2510][0])
+    #     reader.convert_to_example(reader._annotations[i * 500 + 10])
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    # reader.store_multi_processors(reader.store_dir)
+    reader.store_multi_processors(reader.store_dir)
 
 
 if __name__ == '__main__':

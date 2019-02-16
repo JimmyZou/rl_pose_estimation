@@ -3,6 +3,7 @@ import pickle
 import multiprocessing
 from sklearn.decomposition import PCA
 import numpy as np
+import utils
 
 
 class BaseDataset(object):
@@ -24,6 +25,9 @@ class BaseDataset(object):
         self.num_cpus = num_cpus
         self.dataset = 'Empty'
         self.pca = PCA()
+        self.max_depth = None
+        self.test_files = []
+        self.train_files = []
 
     def load_annotation(self):
         raise NotImplementedError
@@ -45,7 +49,25 @@ class BaseDataset(object):
         """
         crop a depth image according to pose
         """
-        raise NotImplemented
+        # bounding box
+        xyz_pose = np.reshape(pose, [-1, 3])
+        x_min, x_max = np.min(xyz_pose[:, 0]) - pad, np.max(xyz_pose[:, 0]) + pad
+        y_min, y_max = np.min(xyz_pose[:, 1]) - pad, np.max(xyz_pose[:, 1]) + pad
+        z_min, z_max = np.min(xyz_pose[:, 2]) - pad, np.max(xyz_pose[:, 2]) + pad
+        bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
+
+        # crop image
+        depth_uvd = utils.depth2uvd(depth_img)
+        depth_xyz = utils.uvd2xyz(depth_uvd, self.camera_cfg)
+        depth_xyz = depth_xyz[(depth_xyz[:, 2] < self.max_depth) & (depth_xyz[:, 2] > 0), :]
+        crop_idxes = (x_min < depth_xyz[:, 0]) & (depth_xyz[:, 0] < x_max) & \
+                     (y_min < depth_xyz[:, 1]) & (depth_xyz[:, 1] < y_max) & \
+                     (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
+        cropped_points = depth_xyz[crop_idxes, :]
+
+        # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
+        example = (filename, xyz_pose, depth_img, bbx, cropped_points)
+        return example
 
     def consistent_orientation(self, example):
         filename, xyz_pose, depth_img, pose_bbx, cropped_points = example
@@ -90,13 +112,14 @@ class BaseDataset(object):
             tag = 'train'
         num_files = N // self.num_imgs_per_file + 1
         file_idxes = [(j * self.num_imgs_per_file, min((j + 1) * self.num_imgs_per_file, N)) for j in range(num_files)]
+        print('[data.%sDataset] %i files in total...' % (self.dataset, num_files))
 
         results = []
         pool = multiprocessing.Pool(self.num_cpus)
         for i in range(num_files):
             results.append(pool.apply_async(self.store_preprocessed_data_per_file,
                                             (self._annotations[file_idxes[i][0]: file_idxes[i][1]],
-                                             '%s-%i-%i' % (tag, i, self.num_imgs_per_file), store_dir,)))
+                                             '%s-%i-%i' % (tag, i, file_idxes[i][1] - file_idxes[i][0]), store_dir,)))
         pool.close()
         pool.join()
         pool.terminate()
@@ -107,4 +130,23 @@ class BaseDataset(object):
                 print(tmp)
         print('[data.%sDataset] multi-processing ends, %fs' % (self.dataset, time.time() - time_begin))
 
+    def get_batch_samples_training(self, num_files):
+        assert self.subset in ['training']
+        m = len(self.train_files)
+        file_idx = np.random.randint(0, m, num_files)
+        data = []
+        for i in file_idx:
+            file = self.train_files[i]
+            with open(file, 'rb') as f:
+                data += pickle.load(f)
+        print('File {} ({:4} samples) is loaded for training.'.format(file_idx, len(data)))
+        return data
+
+    def get_batch_samples_testing(self):
+        assert self.subset in ['training']
+        for i, file in enumerate(self.test_files):
+            print('File %s (%i of %i) is loaded for testing.' % (file, i, len(self.test_files)))
+            with open(file, 'rb') as f:
+                test_data = pickle.load(f)
+            yield test_data
 
