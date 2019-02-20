@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from scipy.io import loadmat
 import glob
+import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
@@ -31,7 +32,7 @@ class NYUDataset(BaseDataset):
             self.train_files = glob.glob(self.root_dir + 'train_data_ppsd/')
             self.test_files = glob.glob(self.root_dir + 'test_data_ppsd/')
         else:
-            raise ValueError('Unknown subset %s to NYU hand datset' % subset)
+            raise ValueError('Unknown subset %s to %s hand datset' % (subset, self.dataset))
 
         if os.path.exists(self.store_dir):
             # for training or testing after pre-processing
@@ -93,29 +94,58 @@ class NYUDataset(BaseDataset):
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
         # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
-        # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx,
-        # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
+        # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
+        # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
         preprocessed_example = self.consistent_orientation(example)
-        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
 
-        # import matplotlib.pyplot as plt
-        # plt.figure()
-        # plt.scatter(preprocessed_example[6][:, 0], preprocessed_example[6][:, 1],
-        #             color='b', marker='.', s=2, alpha=0.5)
-        # plt.scatter(preprocessed_example[5][:, 0], preprocessed_example[5][:, 1], color='r', marker='.', s=10)
-        # plt.show()
-
+        # import utils
+        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
+        # self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
         return preprocessed_example
+
+    @staticmethod
+    def plot_skeleton(points, pose):
+        lw = 1.5
+        plt.figure()
+        if points is not None:
+            plt.scatter(points[:, 0], points[:, 1], color='gray', marker='.', s=2, alpha=0.5)
+        # plot pose skeleton
+        plt.scatter(pose[:, 0], pose[:, 1], color='black', marker='h', s=30)
+        # little finger
+        plt.plot([pose[0, 0], pose[1, 0]], [pose[0, 1], pose[1, 1]], color='red', linewidth=lw)
+        plt.plot([pose[1, 0], pose[13, 0]], [pose[1, 1], pose[13, 1]], color='red', linewidth=lw)
+        # ring finger
+        plt.plot([pose[2, 0], pose[3, 0]], [pose[2, 1], pose[3, 1]], color='orangered', linewidth=lw)
+        plt.plot([pose[3, 0], pose[13, 0]], [pose[3, 1], pose[13, 1]], color='orangered', linewidth=lw)
+        # middle finger
+        plt.plot([pose[4, 0], pose[5, 0]], [pose[4, 1], pose[5, 1]], color='orange', linewidth=lw)
+        plt.plot([pose[5, 0], pose[13, 0]], [pose[5, 1], pose[13, 1]], color='orange', linewidth=lw)
+        # fore finger
+        plt.plot([pose[6, 0], pose[7, 0]], [pose[6, 1], pose[7, 1]], color='yellow', linewidth=lw)
+        plt.plot([pose[7, 0], pose[13, 0]], [pose[7, 1], pose[13, 1]], color='yellow', linewidth=lw)
+        # thumb
+        plt.plot([pose[8, 0], pose[9, 0]], [pose[8, 1], pose[9, 1]], color='cyan', linewidth=lw)
+        plt.plot([pose[9, 0], pose[10, 0]], [pose[9, 1], pose[10, 1]], color='cyan', linewidth=lw)
+        plt.plot([pose[10, 0], pose[13, 0]], [pose[10, 1], pose[13, 1]], color='cyan', linewidth=lw)
+        # palm
+        plt.plot([pose[13, 0], pose[12, 0]], [pose[13, 1], pose[12, 1]], color='purple', linewidth=lw)
+        plt.plot([pose[13, 0], pose[11, 0]], [pose[13, 1], pose[11, 1]], color='purple', linewidth=lw)
+        plt.show()
 
 
 def in_test():
-    reader = NYUDataset(subset='testing', num_cpu=4, num_imgs_per_file=600)
+    reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    # for i in range(3):
-    #     print(reader._annotations[i * 1030][0])
-    #     reader.convert_to_example(reader._annotations[i * 1030])
+    for i in range(10):
+        gap = 250
+        print(reader._annotations[i * gap][0])
+        example = reader.convert_to_example(reader._annotations[i * gap])
+
+        # import environment
+        # env = environment.HandEnv(dataset='NYU', subset='training')
+        # reader.plot_skeleton(None, env.home_pose)
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    reader.store_multi_processors(reader.store_dir)
+    # reader.store_multi_processors(reader.store_dir)
 
 
 if __name__ == '__main__':

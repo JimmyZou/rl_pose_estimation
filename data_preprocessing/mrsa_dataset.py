@@ -6,6 +6,7 @@ import pickle
 import struct
 import multiprocessing
 import glob
+import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
@@ -35,10 +36,10 @@ class MRSADataset(BaseDataset):
             self.src_dir = os.path.join(self.root_dir, 'data_ppsd/')
             assert os.path.exists(self.src_dir)
             all_files = glob.glob(self.src_dir + 'P*')
-            self.train_files = [file for file in all_files if ('/%s-' % self.test_fold) not in file]
-            self.test_files = [file for file in all_files if ('/%s-' % self.test_fold) in file]
+            self.train_files = [file for file in all_files if ('%s-' % self.test_fold) not in file]
+            self.test_files = [file for file in all_files if ('%s-' % self.test_fold) in file]
         else:
-            raise ValueError('Unknown subset %s to MRSA15 hand datset' % subset)
+            raise ValueError('Unknown subset %s to %s hand datset' % (subset, self.dataset))
 
         self.jnt_num = 21
         self.pose_dim = 3 * self.jnt_num
@@ -104,19 +105,49 @@ class MRSADataset(BaseDataset):
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
         # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
-        # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx,
-        # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
+        # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
+        # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
         preprocessed_example = self.consistent_orientation(example)
-        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[5], None, preprocessed_example[6])
 
-        # import matplotlib.pyplot as plt
-        # plt.figure()
-        # plt.scatter(preprocessed_example[6][:, 0], preprocessed_example[6][:, 1],
-        #             color='b', marker='.', s=2, alpha=0.5)
-        # plt.scatter(preprocessed_example[5][:, 0], preprocessed_example[5][:, 1], color='r', marker='.', s=10)
-        # plt.show()
-
+        # import utils
+        # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
+        self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
         return preprocessed_example
+
+    @staticmethod
+    def plot_skeleton(points, pose):
+        lw = 1.5
+        plt.figure()
+        if points is not None:
+            plt.scatter(points[:, 0], points[:, 1], color='gray', marker='.', s=2, alpha=0.5)
+        # plot pose skeleton
+        plt.scatter(pose[:, 0], pose[:, 1], color='black', marker='h', s=30)
+        # little finger
+        plt.plot([pose[16, 0], pose[15, 0]], [pose[16, 1], pose[15, 1]], color='red', linewidth=lw)
+        plt.plot([pose[15, 0], pose[14, 0]], [pose[15, 1], pose[14, 1]], color='red', linewidth=lw)
+        plt.plot([pose[14, 0], pose[13, 0]], [pose[14, 1], pose[13, 1]], color='red', linewidth=lw)
+        plt.plot([pose[13, 0], pose[0, 0]], [pose[13, 1], pose[0, 1]], color='red', linewidth=lw)
+        # ring finger
+        plt.plot([pose[12, 0], pose[11, 0]], [pose[12, 1], pose[11, 1]], color='orangered', linewidth=lw)
+        plt.plot([pose[11, 0], pose[10, 0]], [pose[11, 1], pose[10, 1]], color='orangered', linewidth=lw)
+        plt.plot([pose[10, 0], pose[9, 0]], [pose[10, 1], pose[9, 1]], color='orangered', linewidth=lw)
+        plt.plot([pose[9, 0], pose[0, 0]], [pose[9, 1], pose[0, 1]], color='orangered', linewidth=lw)
+        # middle finger
+        plt.plot([pose[8, 0], pose[7, 0]], [pose[8, 1], pose[7, 1]], color='orange', linewidth=lw)
+        plt.plot([pose[7, 0], pose[6, 0]], [pose[7, 1], pose[6, 1]], color='orange', linewidth=lw)
+        plt.plot([pose[6, 0], pose[5, 0]], [pose[6, 1], pose[5, 1]], color='orange', linewidth=lw)
+        plt.plot([pose[5, 0], pose[0, 0]], [pose[5, 1], pose[0, 1]], color='orange', linewidth=lw)
+        # fore finger
+        plt.plot([pose[4, 0], pose[3, 0]], [pose[4, 1], pose[3, 1]], color='yellow', linewidth=lw)
+        plt.plot([pose[3, 0], pose[2, 0]], [pose[3, 1], pose[2, 1]], color='yellow', linewidth=lw)
+        plt.plot([pose[2, 0], pose[1, 0]], [pose[2, 1], pose[1, 1]], color='yellow', linewidth=lw)
+        plt.plot([pose[1, 0], pose[0, 0]], [pose[1, 1], pose[0, 1]], color='yellow', linewidth=lw)
+        # thumb
+        plt.plot([pose[20, 0], pose[19, 0]], [pose[20, 1], pose[19, 1]], color='cyan', linewidth=lw)
+        plt.plot([pose[19, 0], pose[18, 0]], [pose[19, 1], pose[18, 1]], color='cyan', linewidth=lw)
+        plt.plot([pose[18, 0], pose[17, 0]], [pose[18, 1], pose[17, 1]], color='cyan', linewidth=lw)
+        plt.plot([pose[17, 0], pose[0, 0]], [pose[17, 1], pose[0, 1]], color='cyan', linewidth=lw)
+        plt.show()
 
     def store_multi_processors(self, store_dir):
         print('[data.%sDataset] multi-processing starts...' % self.dataset)
@@ -166,11 +197,20 @@ class MRSADataset(BaseDataset):
 def in_test():
     reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    # for i in range(5):
-    #     print(reader._annotations[i * 500 + 2510][0])
-    #     reader.convert_to_example(reader._annotations[i * 500 + 10])
+    for i in range(7):
+        gap = 500
+        print(reader._annotations[i * gap + 10][0])
+        example = reader.convert_to_example(reader._annotations[i * gap + 1])
+
+        import environment
+        env = environment.HandEnv(dataset='MRSA15', subset='training')
+        reader.plot_skeleton(None, env.home_pose)
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    reader.store_multi_processors(reader.store_dir)
+    # reader.store_multi_processors(reader.store_dir)
+
+    # a = reader.get_batch_samples_training(3)
+    # for data in reader.get_samples_testing():
+    #     print(len(data))
 
 
 if __name__ == '__main__':

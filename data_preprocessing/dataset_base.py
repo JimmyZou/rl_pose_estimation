@@ -65,9 +65,19 @@ class BaseDataset(object):
                      (z_min < depth_xyz[:, 2]) & (depth_xyz[:, 2] < z_max)
         cropped_points = depth_xyz[crop_idxes, :]
 
+        xyz_pose -= np.array([[x_min, y_min, z_min]])
+        cropped_points -= np.array([[x_min, y_min, z_min]])
         # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
         example = (filename, xyz_pose, depth_img, bbx, cropped_points)
         return example
+
+    @staticmethod
+    def convert_to_volume(points, bbx):
+        x_min, x_max, y_min, y_max, z_min, z_max = bbx
+        volume = np.zeros([int(x_max - x_min) + 1, int(y_max - y_min) + 1, int(z_max - z_min) + 1])
+        for point in points:
+            volume[point.astype(np.int16)] += 1
+        return volume
 
     def consistent_orientation(self, example):
         filename, xyz_pose, depth_img, pose_bbx, cropped_points = example
@@ -87,9 +97,10 @@ class BaseDataset(object):
         rotated_bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
         normalized_rotate_points = rotated_points - np.array([[x_min, y_min, z_min]])
         normalized_rotate_pose = rotated_pose - np.array([[x_min, y_min, z_min]])
-
-        return (filename, xyz_pose, depth_img, pose_bbx,
-                coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx)
+        volume = self.convert_to_volume(normalized_rotate_points, rotated_bbx)
+        example = (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
+                   normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+        return example
 
     def store_preprocessed_data_per_file(self, annotations, stored_file_idx, store_dir):
         """
@@ -142,11 +153,11 @@ class BaseDataset(object):
         print('File {} ({:4} samples) is loaded for training.'.format(file_idx, len(data)))
         return data
 
-    def get_batch_samples_testing(self):
+    def get_samples_testing(self):
         assert self.subset in ['training']
         for i, file in enumerate(self.test_files):
             print('File %s (%i of %i) is loaded for testing.' % (file, i, len(self.test_files)))
             with open(file, 'rb') as f:
-                test_data = pickle.load(f)
-            yield test_data
+                data = pickle.load(f)
+            yield data
 

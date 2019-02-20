@@ -37,11 +37,8 @@
 # # anim.to_html5_video()
 # anim.save('basic_animation.html')
 
-def func(x):
-    for i in x:
-        yield i
+import matplotlib.pyplot as plt
 
-x = [1,2,3,4]
-a = func(x)
-for j in func(x):
-    print(j)
+plt.figure()
+plt.plot([0, 50], [0, 50])
+plt.show()
