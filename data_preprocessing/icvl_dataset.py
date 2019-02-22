@@ -137,15 +137,20 @@ def in_test():
     reader = ICVLDataset(subset='pps-training', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
     for i in range(5):
-        gap = 200
+        gap = 201
         print(reader._annotations[i * gap][0])
         example = reader.convert_to_example(reader._annotations[i * gap])
 
-        import environment
-        env = environment.HandEnv(dataset='ICVL', subset='training')
-        reader.plot_skeleton(None, env.home_pose)
+        # import environment
+        # env = environment.HandEnv(dataset='ICVL', subset='training')
+        # reader.plot_skeleton(None, env.home_pose)
+
     # reader.store_preprocessed_data_per_file(reader.annotations()[0:5], 1, reader.store_dir)
     # reader.store_multi_processors(reader.store_dir)
+
+    # a = reader.get_batch_samples_training(3)
+    # for data in reader.get_samples_testing():
+    #     print(len(data))
 
 
 if __name__ == '__main__':

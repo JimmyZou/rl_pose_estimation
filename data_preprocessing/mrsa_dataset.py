@@ -198,13 +198,14 @@ def in_test():
     reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
     for i in range(7):
-        gap = 500
-        print(reader._annotations[i * gap + 10][0])
-        example = reader.convert_to_example(reader._annotations[i * gap + 1])
+        gap = 501
+        print(reader._annotations[i * gap][0])
+        example = reader.convert_to_example(reader._annotations[i * gap])
 
-        import environment
-        env = environment.HandEnv(dataset='MRSA15', subset='training')
-        reader.plot_skeleton(None, env.home_pose)
+        # import environment
+        # env = environment.HandEnv(dataset='MRSA15', subset='training')
+        # reader.plot_skeleton(None, env.home_pose)
+
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     # reader.store_multi_processors(reader.store_dir)
 

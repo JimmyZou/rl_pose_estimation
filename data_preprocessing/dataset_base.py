@@ -33,7 +33,7 @@ class BaseDataset(object):
         raise NotImplementedError
 
     @property
-    def annotations(self):
+    def get_annotations(self):
         """
         return annotations
         """
@@ -75,9 +75,11 @@ class BaseDataset(object):
     def convert_to_volume(points, bbx):
         x_min, x_max, y_min, y_max, z_min, z_max = bbx
         volume = np.zeros([int(x_max - x_min) + 1, int(y_max - y_min) + 1, int(z_max - z_min) + 1])
+        # print(bbx, volume.shape)
         for point in points:
-            volume[point.astype(np.int16)] += 1
-        return volume
+            idx = tuple(point.astype(np.int16))
+            volume[idx] += 1
+        return volume.astype(np.int8)
 
     def consistent_orientation(self, example):
         filename, xyz_pose, depth_img, pose_bbx, cropped_points = example

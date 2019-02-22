@@ -144,8 +144,13 @@ def in_test():
         # import environment
         # env = environment.HandEnv(dataset='NYU', subset='training')
         # reader.plot_skeleton(None, env.home_pose)
+
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     # reader.store_multi_processors(reader.store_dir)
+
+    # a = reader.get_batch_samples_training(3)
+    # for data in reader.get_samples_testing():
+    #     print(len(data))
 
 
 if __name__ == '__main__':
