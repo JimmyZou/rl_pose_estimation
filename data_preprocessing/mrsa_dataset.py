@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/msra15/"):
+    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/mrsa15/"):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -111,7 +111,7 @@ class MRSADataset(BaseDataset):
 
         # import utils
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
-        self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
+        # self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
         return preprocessed_example
 
     @staticmethod
