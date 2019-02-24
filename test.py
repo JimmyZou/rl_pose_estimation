@@ -37,8 +37,3 @@
 # # anim.to_html5_video()
 # anim.save('basic_animation.html')
 
-import matplotlib.pyplot as plt
-
-plt.figure()
-plt.plot([0, 50], [0, 50])
-plt.show()
