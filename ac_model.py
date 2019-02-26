@@ -106,6 +106,11 @@ class CriticRoot(object):
         self.tau = tau
         self.sess = None
 
+        # build model
+        self.obs, self.ac, self.actor_vars = self.build_model(self.scope)
+        self.target_obs, self.target_ac, self.target_actor_vars = self.build_model(self.target_scope)
+        self.update_target_ops = get_target_updates(self.actor_vars, self.target_actor_vars, self.tau)
+
     def build_model(self, scope):
         print('building model %s' % scope)
         with tf.variable_scope(scope):
@@ -138,6 +143,17 @@ class CriticRoot(object):
             ac = tf.identity(fc_out)
         scope_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
         return obs, ac, scope_vars
+
+    def load_sess(self, sess):
+        self.sess = sess
+
+    def get_q(self, obs):
+        return self.sess.run(self.ac, feed_dict={self.obs: obs})
+
+    def get_target_q(self, obs):
+        return self.sess.run(self.target_ac, feed_dict={self.target_obs: obs})
+
+
 
 
 
