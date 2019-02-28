@@ -13,11 +13,11 @@ def get_target_updates(_vars, target_vars, tau):
     return tf.group(*soft_updates)
 
 
-class ActorRoot(object):
-    def __init__(self, tau=0.01,
+class Actor(object):
+    def __init__(self, scope,
+                 tau=0.001,
                  lr=1e-4,
                  obs_dims=(40, 40, 20),
-                 scope='root_actor',
                  cnn_layer=(8, 16, 32, 64, 128),
                  fc_layer=(128, 32)):
         # obs_width: W, H, D; change to N, D, H, W, C
@@ -95,12 +95,13 @@ class ActorRoot(object):
         self.sess.run(self.optimizer, feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
 
 
-class CriticRoot(object):
-    def __init__(self, tau=0.01,
+class Critic(object):
+    def __init__(self,
+                 scope,
+                 tau=0.001,
                  lr=1e-4,
                  obs_dims=(40, 40, 20),
                  cnn_layer=(8, 16, 32, 64, 128),
-                 scope='root_critic',
                  fc_layer=(64, 20, 20, 10)):
         # obs_width: W, H, D; change to N, D, H, W, C
         self.obs_dims = (2 * obs_dims[2] + 1, 2 * obs_dims[1] + 1, 2 * obs_dims[0] + 1)
@@ -201,7 +202,7 @@ class CriticRoot(object):
 
 def in_test():
     import numpy as np
-    # actor = ActorRoot(tau=1)
+    # actor = Actor('actor_root', tau=1)
     # with tf.Session() as sess:
     #     actor.load_sess(sess)
     #     sess.run(tf.global_variables_initializer())
@@ -212,7 +213,7 @@ def in_test():
     #     q_gradient_input = np.array([[1, 1, 1, 1, 1, 1]])
     #     actor.train(q_gradient_input, obs)
 
-    critic = CriticRoot(tau=1)
+    critic = Critic('critic_root', tau=1)
     with tf.Session() as sess:
         critic.load_sess(sess)
         sess.run(tf.global_variables_initializer())

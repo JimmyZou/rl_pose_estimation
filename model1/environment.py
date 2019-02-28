@@ -5,15 +5,15 @@ import collections
 
 
 class HandEnv(object):
-    def __init__(self, dataset, subset, obs_width=(30, 30, 20), iter_per_joint=1, reward_beta=0.1):
+    def __init__(self, dataset, subset, iter_per_joint=(4, 2), reward_beta=0.1):
         self.dataset = dataset
         assert subset in ["training", "testing"]
         self.subset = subset  # ["training", "testing"]
         self.home_pose, self.chains_idx, self.root_idx = self.init_home_pose()
+        # the first element is the iterations for root joint, second for chain joints
         self.iter_per_joint = iter_per_joint
         self.num_chains = len(self.chains_idx)
         self.num_joint = self.home_pose.shape[0]
-        self.obs_width = obs_width
         self.reward_beta = reward_beta
 
         # data of an example
@@ -32,9 +32,6 @@ class HandEnv(object):
         self.current_joint = 0
         self.current_iter = 0
         self.dis2targ = collections.defaultdict(list)
-
-    def set_iter_per_joint(self, iterations):
-        self.iter_per_joint = iterations
 
     def init_home_pose(self):
         if self.dataset == 'NYU':
@@ -136,7 +133,7 @@ class HandEnv(object):
     def step(self, ac):
         # ac is lie parameter [w, t] for current joint
         ac = np.squeeze(ac)
-        SE_mat = utils.lietomatrix(ac[0:3], ac[3:6])
+        se_mat = utils.lietomatrix(ac[0:3], ac[3:6])
         curr_joint_idx = self.chains_idx[self.current_chain][self.current_joint]
 
         # obtain the initial distance for reward
@@ -160,7 +157,7 @@ class HandEnv(object):
             assert curr_joint_idx == self.root_idx
             root_coor = self.pose[curr_joint_idx, :]
             pose = np.concatenate([self.pose - root_coor, np.ones([self.num_joint, 1])], axis=1)
-            pose = np.matmul(SE_mat, pose.T).T
+            pose = np.matmul(se_mat, pose.T).T
             self.pose = pose[:, 0:3] + root_coor
 
             # define root reward
@@ -172,7 +169,6 @@ class HandEnv(object):
             self.dis2targ[curr_joint_idx].append((root_dis, other_dis))
             r = (self.dis2targ[curr_joint_idx][-2][0] - self.dis2targ[curr_joint_idx][-1][0]) + \
                 self.reward_beta * (self.dis2targ[curr_joint_idx][-2][1] - self.dis2targ[curr_joint_idx][-1][1])
-
         else:
             # finger branch chain, adjust the position of sub-sequential joint on the chain
             current_chain = self.chains_idx[self.current_chain]
@@ -180,7 +176,7 @@ class HandEnv(object):
             subseq_joints = current_chain[self.current_joint:]
             # print(curr_joint_idx, adjust_joints, i)
             pose = np.concatenate([self.pose[subseq_joints, :] - root_coor, np.ones([len(subseq_joints), 1])], axis=1)
-            pose = np.matmul(SE_mat, pose.T).T
+            pose = np.matmul(se_mat, pose.T).T
             self.pose[subseq_joints, :] = pose[:, 0:3] + root_coor
 
             # define reward for joints on a finger
@@ -188,19 +184,30 @@ class HandEnv(object):
             distance = np.linalg.norm(target_xyz - pred_xyz)
             self.dis2targ[curr_joint_idx].append(distance)
             r = self.dis2targ[curr_joint_idx][-2] - self.dis2targ[curr_joint_idx][-1]
-        r = r/10
+        # r = r/10
         return r
 
-    def get_obs(self):
+    def get_obs(self, obs_width=(40, 40, 20)):
         # decide the next joint
         all_done, is_root, chain_done, joint_done = False, False, False, False
         current_chain = self.chains_idx[self.current_chain]
-        if self.current_joint == len(current_chain) - 1 and self.current_iter == self.iter_per_joint - 1:
+
+        # next joint if it is chain joint
+        if self.current_joint == len(current_chain) - 1 and self.current_iter == self.iter_per_joint[1] - 1 \
+                and self.current_chain != 0:
             self.current_iter += 1
             chain_done = True
             if self.current_chain == len(self.chains_idx) - 1:
                 all_done = True
-        elif self.current_iter < self.iter_per_joint:
+        # next joint is still root joint (iterate on the root joint)
+        elif self.current_joint == len(current_chain) - 1 and self.current_iter == self.iter_per_joint[0] - 1 \
+                and self.current_chain == 0:
+            self.current_iter += 1
+            chain_done = True
+        # current_iter plus 1
+        elif self.current_iter < self.iter_per_joint[0] and self.current_chain == 0:
+            self.current_iter += 1
+        elif self.current_iter < self.iter_per_joint[1] and self.current_chain != 0:
             self.current_iter += 1
         else:
             self.current_iter = 1
@@ -215,8 +222,9 @@ class HandEnv(object):
         # get the local volumetric observation
         curr_joint_idx = self.chains_idx[self.current_chain][self.current_joint]
         joint_position = self.pose[curr_joint_idx, :]
-        print('current joint idx: %i' % curr_joint_idx)
-        local_obs = self.crop_volume(self.volume, joint_position, self.obs_width)
+        # print('current joint idx: %i' % curr_joint_idx, all_done, chain_done, is_root)
+        local_obs = self.crop_volume(self.volume, joint_position, obs_width)
+        # local_obs = 0
         return local_obs, all_done, chain_done, is_root
 
     @staticmethod
@@ -262,53 +270,53 @@ class HandEnv(object):
 
 
 def in_test():
-    # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=2)
-    # while not env.get_obs()[1]:
-    #     pass
+    env = HandEnv(dataset='NYU', subset='training', iter_per_joint=(4, 2))
+    while not env.get_obs()[1]:
+        pass
 
-    from data_preprocessing.mrsa_dataset import MRSADataset
-    reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4,
-                         num_imgs_per_file=600, root_dir='../../data/mrsa15/')
-    reader.load_annotation()
-    example = reader.convert_to_example(reader._annotations[10])
-    env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=1)
-    env.reset(example)
-
-    # from data_preprocessing.nyu_dataset import NYUDataset
-    # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600, root_dir='../../data/nyu/')
+    # from data_preprocessing.mrsa_dataset import MRSADataset
+    # reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4,
+    #                      num_imgs_per_file=600, root_dir='../../data/mrsa15/')
     # reader.load_annotation()
     # example = reader.convert_to_example(reader._annotations[10])
-    # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=3)
+    # env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=1)
     # env.reset(example)
-
-    reader.plot_skeleton(None, env.pose)
-
-    env.get_obs()
-    r = env.step(np.array([0, 0, np.pi / 4, 10, 0, 0]))
-    print(r)
-    reader.plot_skeleton(None, env.pose)
-
-    env.get_obs()
-    r = env.step(np.array([0, 0, np.pi / 2, 0, 20, 0]))
-    print(r)
-    reader.plot_skeleton(None, env.pose)
-
-    env.get_obs()
-    r = env.step(np.array([0, 0, np.pi / 2, 0, -20, 0]))
-    print(r)
-    reader.plot_skeleton(None, env.pose)
-
-    env.get_obs()
-    r = env.step(np.array([0, 0, np.pi / 2, 10, 0, 0]))
-    print(r)
-    reader.plot_skeleton(None, env.pose)
-
-    env.get_obs()
-    r = env.step(np.array([0, 0, np.pi / 2, 10, 0, 0]))
-    print(r)
-    reader.plot_skeleton(None, env.pose)
-
-    print(env.dis2targ)
+    #
+    # # from data_preprocessing.nyu_dataset import NYUDataset
+    # # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600, root_dir='../../data/nyu/')
+    # # reader.load_annotation()
+    # # example = reader.convert_to_example(reader._annotations[10])
+    # # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=3)
+    # # env.reset(example)
+    #
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # env.get_obs()
+    # r = env.step(np.array([0, 0, np.pi / 4, 10, 0, 0]))
+    # print(r)
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # env.get_obs()
+    # r = env.step(np.array([0, 0, np.pi / 2, 0, 20, 0]))
+    # print(r)
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # env.get_obs()
+    # r = env.step(np.array([0, 0, np.pi / 2, 0, -20, 0]))
+    # print(r)
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # env.get_obs()
+    # r = env.step(np.array([0, 0, np.pi / 2, 10, 0, 0]))
+    # print(r)
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # env.get_obs()
+    # r = env.step(np.array([0, 0, np.pi / 2, 10, 0, 0]))
+    # print(r)
+    # reader.plot_skeleton(None, env.pose)
+    #
+    # print(env.dis2targ)
 
     pass
 

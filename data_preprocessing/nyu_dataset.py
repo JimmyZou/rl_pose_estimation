@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=700, root_dir="../../data/nyu/"):
+    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/nyu/"):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         self.camera_cfg = (588.235, 587.084, 320, 240, 640, 480)
