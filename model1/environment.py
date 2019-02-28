@@ -5,7 +5,7 @@ import collections
 
 
 class HandEnv(object):
-    def __init__(self, dataset, subset, obs_width=(30, 30, 20), iter_per_joint=2):
+    def __init__(self, dataset, subset, obs_width=(30, 30, 20), iter_per_joint=1, reward_beta=0.1):
         self.dataset = dataset
         assert subset in ["training", "testing"]
         self.subset = subset  # ["training", "testing"]
@@ -14,6 +14,7 @@ class HandEnv(object):
         self.num_chains = len(self.chains_idx)
         self.num_joint = self.home_pose.shape[0]
         self.obs_width = obs_width
+        self.reward_beta = reward_beta
 
         # data of an example
         self.pose = copy.copy(self.home_pose)
@@ -31,6 +32,9 @@ class HandEnv(object):
         self.current_joint = 0
         self.current_iter = 0
         self.dis2targ = collections.defaultdict(list)
+
+    def set_iter_per_joint(self, iterations):
+        self.iter_per_joint = iterations
 
     def init_home_pose(self):
         if self.dataset == 'NYU':
@@ -139,8 +143,16 @@ class HandEnv(object):
         target_xyz = self.norm_pose[curr_joint_idx, :]
         if not self.dis2targ[curr_joint_idx]:
             # self.dis2targ[curr_joint_idx] is empty
-            init_xyz = self.pose[curr_joint_idx, :]
-            self.dis2targ[curr_joint_idx].append(np.linalg.norm(target_xyz - init_xyz))
+            if self.current_chain == 0:
+                init_root_xyz = self.pose[curr_joint_idx, :]
+                root_dis = np.linalg.norm(target_xyz - init_root_xyz)
+                other_xyz = np.delete(self.pose, curr_joint_idx, axis=0)
+                target_other_xyz = np.delete(self.norm_pose, curr_joint_idx, axis=0)
+                other_dis = np.mean(np.linalg.norm(other_xyz - target_other_xyz, axis=1))
+                self.dis2targ[curr_joint_idx].append((root_dis, other_dis))
+            else:
+                init_xyz = self.pose[curr_joint_idx, :]
+                self.dis2targ[curr_joint_idx].append(np.linalg.norm(target_xyz - init_xyz))
 
         # define reward for root joint or chain joints
         if self.current_chain == 0:
@@ -150,6 +162,17 @@ class HandEnv(object):
             pose = np.concatenate([self.pose - root_coor, np.ones([self.num_joint, 1])], axis=1)
             pose = np.matmul(SE_mat, pose.T).T
             self.pose = pose[:, 0:3] + root_coor
+
+            # define root reward
+            pred_xyz = self.pose[curr_joint_idx, :]
+            root_dis = np.linalg.norm(target_xyz - pred_xyz)
+            other_xyz = np.delete(self.pose, curr_joint_idx, axis=0)
+            target_other_xyz = np.delete(self.norm_pose, curr_joint_idx, axis=0)
+            other_dis = np.mean(np.linalg.norm(other_xyz - target_other_xyz, axis=1))
+            self.dis2targ[curr_joint_idx].append((root_dis, other_dis))
+            r = (self.dis2targ[curr_joint_idx][-2][0] - self.dis2targ[curr_joint_idx][-1][0]) + \
+                self.reward_beta * (self.dis2targ[curr_joint_idx][-2][1] - self.dis2targ[curr_joint_idx][-1][1])
+
         else:
             # finger branch chain, adjust the position of sub-sequential joint on the chain
             current_chain = self.chains_idx[self.current_chain]
@@ -160,11 +183,12 @@ class HandEnv(object):
             pose = np.matmul(SE_mat, pose.T).T
             self.pose[subseq_joints, :] = pose[:, 0:3] + root_coor
 
-        # define reward for joints on a finger
-        pred_xyz = self.pose[curr_joint_idx, :]
-        distance = np.linalg.norm(target_xyz - pred_xyz)
-        self.dis2targ[curr_joint_idx].append(distance)
-        r = self.dis2targ[curr_joint_idx][-2] - self.dis2targ[curr_joint_idx][-1]
+            # define reward for joints on a finger
+            pred_xyz = self.pose[curr_joint_idx, :]
+            distance = np.linalg.norm(target_xyz - pred_xyz)
+            self.dis2targ[curr_joint_idx].append(distance)
+            r = self.dis2targ[curr_joint_idx][-2] - self.dis2targ[curr_joint_idx][-1]
+        r = r/10
         return r
 
     def get_obs(self):
@@ -244,23 +268,23 @@ def in_test():
 
     from data_preprocessing.mrsa_dataset import MRSADataset
     reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4,
-                         num_imgs_per_file=600, root_dir='../data/mrsa15/')
+                         num_imgs_per_file=600, root_dir='../../data/mrsa15/')
     reader.load_annotation()
     example = reader.convert_to_example(reader._annotations[10])
     env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=1)
     env.reset(example)
-    #
+
     # from data_preprocessing.nyu_dataset import NYUDataset
-    # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600, root_dir='../data/nyu/')
+    # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600, root_dir='../../data/nyu/')
     # reader.load_annotation()
     # example = reader.convert_to_example(reader._annotations[10])
-    # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=1)
+    # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=3)
     # env.reset(example)
 
     reader.plot_skeleton(None, env.pose)
 
     env.get_obs()
-    r = env.step(np.array([0, 0, 0, 0, 0, 0]))
+    r = env.step(np.array([0, 0, np.pi / 4, 10, 0, 0]))
     print(r)
     reader.plot_skeleton(None, env.pose)
 

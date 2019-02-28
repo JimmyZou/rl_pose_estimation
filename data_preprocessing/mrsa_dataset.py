@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/mrsa15/"):
+    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir='../../data/mrsa15/'):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
