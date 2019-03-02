@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/nyu/"):
+    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir="/home/data/nyu/"):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         self.camera_cfg = (588.235, 587.084, 320, 240, 640, 480)
@@ -134,19 +134,16 @@ class NYUDataset(BaseDataset):
 
 
 def in_test():
-    reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
+    reader = NYUDataset(subset='pps-training', num_cpu=30, num_imgs_per_file=600)
+    # reader = NYUDataset(subset='pps-testing', num_cpu=30, num_imgs_per_file=600)
     reader.load_annotation()
-    for i in range(10):
-        gap = 250
-        print(reader._annotations[i * gap][0])
-        example = reader.convert_to_example(reader._annotations[i * gap])
-
-        # import environment
-        # env = environment.HandEnv(dataset='NYU', subset='training')
-        # reader.plot_skeleton(None, env.home_pose)
+    # for i in range(10):
+    #     gap = 250
+    #     print(reader._annotations[i * gap][0])
+    #     example = reader.convert_to_example(reader._annotations[i * gap])
 
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    # reader.store_multi_processors(reader.store_dir)
+    reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)
     # for data in reader.get_samples_testing():

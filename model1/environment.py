@@ -238,7 +238,6 @@ class HandEnv(object):
 
         x_max, y_max, z_max = volume.shape
         c = np.asarray(center_coor, dtype=np.int16)
-        print('joint coordination:', c)
         local_obs = np.zeros([2 * w[0] + 1, 2 * w[1] + 1, 2 * w[2] + 1], dtype=np.int8)
         if (x_max + w[0] < c[0]) or (y_max + w[1] < c[1]) or (z_max + w[2] < c[2]):
             # the cropped space is out of the volume

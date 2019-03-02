@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir='../../data/mrsa15/'):
+    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir='/hand_pose_data/mrsa15/'):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -44,6 +44,8 @@ class MRSADataset(BaseDataset):
         self.jnt_num = 21
         self.pose_dim = 3 * self.jnt_num
         print('[%sDataset] %d joints, with %d dim' % (self.dataset, self.jnt_num, self.pose_dim))
+        self.pre_depth_image = None
+        self.pre_crop_points = None
 
     def load_annotation(self):
         time_begin = time.time()
@@ -86,8 +88,11 @@ class MRSADataset(BaseDataset):
         depth_img = np.zeros((bbx[1], bbx[0]), np.float32)
         np.copyto(depth_img[bbx[3]: bbx[5], bbx[2]: bbx[4]], cropped_depth_img)
         # for empty image, just copy the previous frame
-        if depth_img.sum() < 10:
+        if (depth_img > 0).sum() < 1000:
             print('[warning] %s is empty' % filename)
+            depth_img = self.pre_depth_image.copy()
+        else:
+            self.pre_depth_image = depth_img.copy()
         return depth_img, cropped_depth_img, bbx
 
     def convert_to_example(self, label):
@@ -97,12 +102,18 @@ class MRSADataset(BaseDataset):
         filename, pose = label
         depth_img, cropped_depth_img, mrsa_shape = self._bin2depth(filename)
 
-        # show depth image
+        # # show depth image
+        # import utils
         # jnt_uvd = utils.xyz2uvd(pose.reshape([-1, 3]), self.camera_cfg)
         # utils.plot_annotated_depth_img(depth_img, jnt_uvd)
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
+        if example[4].shape[0] == 0:
+            print('[warning] points %s is empty' % filename)
+            example[4] = self.pre_crop_points.copy()
+        else:
+            self.pre_crop_points = example[4].copy()
         # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
@@ -182,7 +193,7 @@ class MRSADataset(BaseDataset):
         pool = multiprocessing.Pool(self.num_cpus)
         for i, filename in enumerate(filenames):
             results.append(pool.apply_async(self.store_preprocessed_data_per_file,
-                        (self._annotations[file_idxes[i]: file_idxes[i + 1]], filename, store_dir, )))
+                                        (self._annotations[file_idxes[i]: file_idxes[i + 1]], filename, store_dir, )))
         pool.close()
         pool.join()
         pool.terminate()
@@ -195,19 +206,23 @@ class MRSADataset(BaseDataset):
 
 
 def in_test():
-    reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
+    reader = MRSADataset(subset='pre-processing', test_fold='P0', num_cpu=30, num_imgs_per_file=600)
     reader.load_annotation()
-    for i in range(7):
-        gap = 501
-        print(reader._annotations[i * gap][0])
-        example = reader.convert_to_example(reader._annotations[i * gap])
+    # for i in range(7):
+    #     gap = 501
+    #     print(reader._annotations[i * gap][0])
+    #     example = reader.convert_to_example(reader._annotations[i * gap])
 
-        # import environment
-        # env = environment.HandEnv(dataset='MRSA15', subset='training')
-        # reader.plot_skeleton(None, env.home_pose)
+    # for ann in reader._annotations:
+    #     if 'P3/3/000289_depth' in ann[0] or 'P3/3/000288_depth' in ann[0]:
+    #         example = reader.convert_to_example(ann)
+    #         # try:
+    #         #     example = reader.convert_to_example(ann)
+    #         # except:
+    #         #     print('error...%s', ann[0])
 
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
-    # reader.store_multi_processors(reader.store_dir)
+    reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)
     # for data in reader.get_samples_testing():
@@ -216,4 +231,21 @@ def in_test():
 
 if __name__ == '__main__':
     in_test()
+
+    # import utils
+    # import glob
+    # import pickle
+    # camera_cfg = (241.42, 241.42, 160, 120, 320, 240)
+    # files = glob.glob('../../../hand_pose_data/mrsa15/data_ppsd/P3*')
+    # for file in files:
+    #     with open(file, 'rb') as f:
+    #         data = pickle.load(f)
+    #         for sample in data:
+    #             if '4/000441_depth' in sample[0] or '4/000442_depth' in sample[0] or '4/000443_depth' in sample[0] \
+    #                     or '4/000444_depth' in sample[0] or '4/000445_depth' in sample[0]:
+    #                 pose = sample[1]
+    #                 depth_img = sample[2]
+    #                 jnt_uvd = utils.xyz2uvd(pose.reshape([-1, 3]), camera_cfg)
+    #                 utils.plot_annotated_depth_img(depth_img, jnt_uvd)
+
 

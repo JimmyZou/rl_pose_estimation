@@ -2,7 +2,6 @@ import numpy as np
 from collections import deque
 import random
 import pickle
-from model1.ac_model import Actor, Critic
 
 
 class ReplayBuffer(object):
@@ -36,8 +35,7 @@ class ReplayBuffer(object):
 
 class Sampler(object):
     def __init__(self, actor_root, critic_root, actor_chain, critic_chain,
-                 env, dataset, root_buffer, chain_buffer,
-                 root_obs_width=(40, 40, 20), chain_obs_width=(30, 30, 20), gamma=0.9):
+                 env, dataset, root_obs_width=(40, 40, 20), chain_obs_width=(30, 30, 20), gamma=0.9):
         self.actor_root = actor_root
         self.critic_root = critic_root
         self.root_obs_width = root_obs_width
@@ -47,8 +45,8 @@ class Sampler(object):
         self.env = env
         self.dataset = dataset
         self.gamma = gamma
-        self.root_buffer = root_buffer
-        self.chain_buffer = chain_buffer
+        self.avg_r = 0
+        self.n_rs = 0
 
     def collect_one_episode_root(self, example):
         obs = []
@@ -59,13 +57,17 @@ class Sampler(object):
         is_root = True
         while is_root:
             local_obs, _, _, is_root = self.env.get_obs(self.root_obs_width)
-            local_obs = np.expand_dims(np.expand_dims(local_obs, axis=0), axis=-1)
+            # transpose and expand local_obs to NDHWC
+            local_obs = np.expand_dims(np.expand_dims(np.transpose(local_obs, [2, 0, 1]), axis=0), axis=-1)
             ac = self.actor_root.get_action(local_obs)
             r = self.env.step(ac)
             obs.append(local_obs)
             acs.append(acs)
             rs.append(np.array([[r]]))
             gammas.append(np.array([[self.gamma]]))
+            # average history rewards
+            self.n_rs += 1
+            self.avg_r = self.avg_r + (r - self.avg_r) / self.n_rs
         # next obs
         next_obs = obs[1:]
         # the terminal
@@ -73,14 +75,18 @@ class Sampler(object):
         gammas[-1] = 0
         # save to buffer
         samples = list(zip(obs, acs, rs, next_obs, gammas))
-        self.root_buffer.add(samples)
+        return samples
 
     def collect_multiple_samples_root(self, num_files=2):
+        mul_samples = []
         examples = self.dataset.get_batch_samples_training(num_files)
-        for example in range(examples):
-            self.collect_one_episode_root(example)
+        for example in examples:
+            mul_samples += self.collect_one_episode_root(example)
+            print('avg_rewards({} samples):{:.4f}'.format(self.n_rs, self.avg_r))
+        return mul_samples
 
     def collect_one_episode_chain(self, example):
+        samples = []
         obs = []
         acs = []
         rs = []
@@ -90,7 +96,7 @@ class Sampler(object):
         all_done = False
         while not all_done:
             local_obs, all_done, chain_done, is_root = self.env.get_obs(obs_width)
-            local_obs = np.expand_dims(np.expand_dims(local_obs, axis=0), axis=-1)
+            local_obs = np.expand_dims(np.expand_dims(np.transpose(local_obs, [2, 0, 1]), axis=0), axis=-1)
             if is_root:
                 ac = self.actor_root.get_action(local_obs)
                 r = self.env.step(ac)
@@ -103,6 +109,9 @@ class Sampler(object):
                 acs.append(acs)
                 rs.append(np.array([[r]]))
                 gammas.append(np.array([[self.gamma]]))
+                # update average history reward
+                self.n_rs += 1
+                self.avg_r = self.avg_r + (r - self.avg_r) / self.n_rs
                 if chain_done:
                     # next obs
                     next_obs = obs[1:]
@@ -111,19 +120,23 @@ class Sampler(object):
                     gammas[-1] = 0
                     # save to buffer
                     samples = list(zip(obs, acs, rs, next_obs, gammas))
-                    self.chain_buffer.add(samples)
                     obs = []
                     acs = []
                     rs = []
                     gammas = []
+        return samples
 
-    def collect_multiple_samples_chain(self, num_files=2):
+    def collect_multiple_samples_chain(self, num_files=1):
+        mul_samples = []
         examples = self.dataset.get_batch_samples_training(num_files)
-        for example in range(examples):
-            self.collect_one_episode_chain(example)
+        for example in examples:
+            mul_samples += self.collect_one_episode_chain(example)
+            print('avg_rewards({} samples):{:.4f}'.format(self.n_rs, self.avg_r))
+        return mul_samples
 
 
 def in_test():
+    # multi-processing
     pass
 
 

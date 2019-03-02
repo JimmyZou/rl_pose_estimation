@@ -37,3 +37,10 @@
 # # anim.to_html5_video()
 # anim.save('basic_animation.html')
 
+
+#
+# import ray
+#
+# ray.init(num_cpus=15, num_gpus=3)
+# samples = [train_root.remote(config) for _ in range(3)]
+# ray.get(samples)

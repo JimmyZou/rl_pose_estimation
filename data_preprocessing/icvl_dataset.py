@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 class ICVLDataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir="../../data/icvl/"):
+    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir='/hand_pose_data/icvl/'):
         super(ICVLDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -19,6 +19,7 @@ class ICVLDataset(BaseDataset):
         self.root_dir = root_dir
         self.num_imgs_per_file = num_imgs_per_file
         self.dataset = 'ICVL'
+        self.pre_depth_img = None
 
         if self.subset in ['pps-training']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/train/')
@@ -31,19 +32,22 @@ class ICVLDataset(BaseDataset):
             self.img_dir = os.path.join(self.src_dir, 'Depth')
             self.store_dir = os.path.join(self.src_dir, 'test_data_ppsd/')
         elif self.subset in ['training']:
-            self.train_files = glob.glob(self.root_dir + 'dataset/train/train_data_ppsd/')
-            self.test_files = glob.glob(self.root_dir + 'dataset/test/test_data_ppsd/')
+            self.train_files = glob.glob(self.root_dir + 'dataset/train/train_data_ppsd/*')
+            self.test_files = glob.glob(self.root_dir + 'dataset/test/test_data_ppsd/*')
+            print('[%sDataset] %i training files and %i testing files in total.'
+                  % (self.dataset, len(self.train_files), len(self.test_files)))
         else:
             raise ValueError('Unknown subset %s to %s hand datset' % (subset, self.dataset))
 
-        if os.path.exists(self.store_dir):
-            # for training or testing after pre-processing
-            self.file_list = glob.glob(self.store_dir)
-            print('[%sDataset] %d %s files are loaded from %s' %
-                  (self.dataset, len(self.file_list), self.subset, self.store_dir))
-        else:
-            os.makedirs(self.store_dir)
-            print('File %s is created to save preprocessed data.' % self.store_dir)
+        if self.subset in ['pps-testing', 'pps-training']:
+            if os.path.exists(self.store_dir):
+                # for training or testing after pre-processing
+                self.file_list = glob.glob(self.store_dir)
+                print('[%sDataset] %d %s files are loaded from %s' %
+                      (self.dataset, len(self.file_list), self.subset, self.store_dir))
+            else:
+                os.makedirs(self.store_dir)
+                print('File %s is created to save preprocessed data.' % self.store_dir)
 
         self.jnt_num = 16
         self.pose_dim = 3 * self.jnt_num
@@ -61,9 +65,9 @@ class ICVLDataset(BaseDataset):
             # load joint.txt in each fold.
             with open(self.src_dir + 'labels.txt', 'r') as f:
                 for frm_idx, line in enumerate(f):
-                    # if self.subset in ['training', 'validation', 'training_small'] and not line.startswith('2014'):
-                    #     continue
-                    if line == '\n':
+                    if self.subset in ['pps-training'] and not line.startswith('2014'):
+                        continue
+                    if line == '\n' or '201406030937/image_-001.png' in line:
                         continue
                     buf = line.strip(' \n').split(' ')
                     filename = buf[0]
@@ -84,6 +88,13 @@ class ICVLDataset(BaseDataset):
         filename, pose = label
         img_dir = os.path.join(self.img_dir, filename)
         depth_img = cv2.imread(img_dir, -1)  # BGR order
+        if depth_img is None:
+            print('[warning] %s is None' % filename)
+        if (depth_img < self.max_depth).sum() < 20:
+            depth_img = self.pre_depth_img.copy()
+            print('[warning] points %s is empty' % filename)
+        else:
+            self.pre_depth_img = depth_img.copy()
 
         # show depth image
         # jnt_uvd = utils.xyz2uvd(pose.reshape([-1, 3]), self.camera_cfg)
@@ -91,6 +102,8 @@ class ICVLDataset(BaseDataset):
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
+
+
         # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
@@ -99,7 +112,7 @@ class ICVLDataset(BaseDataset):
 
         # import utils
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
-        self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
+        # self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
         return preprocessed_example
 
     @staticmethod
@@ -134,19 +147,24 @@ class ICVLDataset(BaseDataset):
 
 
 def in_test():
-    reader = ICVLDataset(subset='pps-training', num_cpu=4, num_imgs_per_file=600)
+    # reader = ICVLDataset(subset='pps-training', num_cpu=20, num_imgs_per_file=600)
+    reader = ICVLDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    for i in range(5):
-        gap = 201
-        print(reader._annotations[i * gap][0])
-        example = reader.convert_to_example(reader._annotations[i * gap])
+    # for i in range(5):
+    #     gap = 201
+    #     print(reader._annotations[i * gap][0])
+    #     example = reader.convert_to_example(reader._annotations[i * gap])
 
-        # import environment
-        # env = environment.HandEnv(dataset='ICVL', subset='training')
-        # reader.plot_skeleton(None, env.home_pose)
+    # for ann in reader._annotations:
+    #     if '201406191014/image_1716.png' in ann[0] or '201406191014/image_1720.png' in ann[0]:
+    #         example = reader.convert_to_example(ann)
+    #         # try:
+    #         #     example = reader.convert_to_example(ann)
+    #         # except:
+    #         #     print('error...%s', ann[0])
 
     # reader.store_preprocessed_data_per_file(reader.annotations()[0:5], 1, reader.store_dir)
-    # reader.store_multi_processors(reader.store_dir)
+    reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)
     # for data in reader.get_samples_testing():

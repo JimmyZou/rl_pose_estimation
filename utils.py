@@ -1,5 +1,54 @@
 import numpy as np
 from matplotlib import pyplot as plt
+import pickle
+import tensorflow as tf
+
+
+def print_args(args):
+    """ Prints the argparse argmuments applied
+    Args:
+      args = parser.parse_args()
+    """
+    max_length = max([len(k) for k, _ in args.items()])
+    for k, v in args.items():
+        print(' ' * (max_length-len(k)) + k + ': ' + str(v))
+
+
+def str2int_tuple(args):
+    for key, value in args.items():
+        if type(value) == str and value[0] == '(' and value[-1] == ')':
+            tmp = tuple(map(int, value[1:-1].split(',')))
+            args[key] = tmp
+    return args
+
+
+def saveToFlat(var_list, param_pkl_path):
+    # get all the values
+    var_values = np.concatenate([v.flatten() for v in tf.get_default_session().run(var_list)])
+    pickle.dump(var_values, open(param_pkl_path, "wb"))
+
+
+def load_from_file(param_pkl_path):
+    with open(param_pkl_path, 'rb') as f:
+        params = pickle.load(f)
+    return params.astype(np.float32)
+
+
+def loadFromFlat(var_list, param_pkl_path):
+    flat_params = load_from_file(param_pkl_path)
+    # print("the type of the parameters stored is", flat_params.dtype)
+    shapes = list(map(lambda x: x.get_shape().as_list(), var_list))
+    total_size = np.sum([int(np.prod(shape)) for shape in shapes])
+    theta = tf.placeholder(tf.float32, [total_size])
+    start = 0
+    assigns = []
+    for (shape, v) in zip(shapes, var_list):
+        size = int(np.prod(shape))
+        print(v.name)
+        assigns.append(tf.assign(v, tf.reshape(theta[start:start + size], shape)))
+        start += size
+    op = tf.group(*assigns)
+    tf.get_default_session().run(op, {theta: flat_params})
 
 
 def expmap2rotmat(A):

@@ -68,7 +68,7 @@ class BaseDataset(object):
         xyz_pose -= np.array([[x_min, y_min, z_min]])
         cropped_points -= np.array([[x_min, y_min, z_min]])
         # example: tuple (filename, xyz_pose, depth_img, bbx, cropped_points)
-        example = (filename, xyz_pose, depth_img, bbx, cropped_points)
+        example = [filename, xyz_pose, depth_img, bbx, cropped_points]
         return example
 
     @staticmethod

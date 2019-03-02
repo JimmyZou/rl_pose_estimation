@@ -38,7 +38,7 @@ class Actor(object):
 
         # variable for optimization
         self.q_gradient_input = tf.placeholder(shape=(None, self.ac_dim), dtype=tf.float32, name='q_gradient')
-        self.optimizer = self.set_optimizer()
+        self.optimizer, self.actor_loss = self.set_optimizer()
 
     def build_model(self, scope):
         print('building model %s' % scope)
@@ -77,7 +77,7 @@ class Actor(object):
         actor_loss = - tf.reduce_mean(self.ac * self.q_gradient_input, axis=0)
         actor_grads = tf.gradients(actor_loss, self.actor_vars)
         optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(actor_grads, self.actor_vars))
-        return optimizer
+        return optimizer, actor_loss
 
     def load_sess(self, sess):
         self.sess = sess
@@ -92,7 +92,13 @@ class Actor(object):
 
     def train(self, q_gradient, obs):
         # optimization
-        self.sess.run(self.optimizer, feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
+        self.sess.run([self.optimizer, self.actor_loss], feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
+
+    def get_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+
+    def get_target_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.target_scope)
 
 
 class Critic(object):
@@ -126,7 +132,7 @@ class Critic(object):
         # optimizer
         self.r = tf.placeholder(shape=(None, 1), dtype=tf.float32, name='root_r')
         self.gamma = tf.placeholder(shape=(None, 1), dtype=tf.float32, name='root_gamma')
-        self.optimizer = self.set_optimizer()
+        self.optimizer, self.q_loss = self.set_optimizer()
 
     def build_model(self, scope):
         print('building model %s' % scope)
@@ -154,16 +160,10 @@ class Critic(object):
             for idx, i in enumerate(self.fc_layer):
                 if idx == 2:
                     fc_out = tf.concat([fc_out, ac], axis=1)
-                if idx < 1:
-                    fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                               num_outputs=i,
-                                                               activation_fn=tf.nn.elu,
-                                                               scope='fc%i' % idx)
-                else:
-                    fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                               num_outputs=i,
-                                                               activation_fn=None,
-                                                               scope='fc%i' % idx)
+                fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                           num_outputs=i,
+                                                           activation_fn=tf.nn.elu,
+                                                           scope='fc%i' % idx)
             # last layer
             q_value = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=1,
                                                         activation_fn=None, scope='last_fc')
@@ -174,7 +174,7 @@ class Critic(object):
         q_loss = tf.reduce_mean(tf.square(self.r + self.gamma * self.target_q - self.q), axis=0)
         critic_grads = tf.gradients(q_loss, self.critic_vars)
         optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(critic_grads, self.critic_vars))
-        return optimizer
+        return optimizer, q_loss
 
     def load_sess(self, sess):
         self.sess = sess
@@ -192,11 +192,15 @@ class Critic(object):
         return self.sess.run(self.target_q_gradient, feed_dict={self.target_obs: obs, self.target_ac: ac})
 
     def train(self, obs, ac, next_obs, next_ac, r, gamma):
-        self.sess.run(self.optimizer, feed_dict={self.obs: obs, self.ac: ac, self.r: r, self.gamma: gamma,
-                                                 self.target_obs: next_obs, self.target_ac: next_ac})
+        self.sess.run([self.optimizer, self.q_loss], feed_dict={self.obs: obs, self.ac: ac, self.r: r,
+                                                                self.gamma: gamma, self.target_obs: next_obs,
+                                                                self.target_ac: next_ac})
 
+    def get_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
 
-
+    def get_target_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.target_scope)
 
 
 
