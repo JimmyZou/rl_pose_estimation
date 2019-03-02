@@ -14,12 +14,12 @@ import numpy as np
 
 def train_root(config):
     if config['dataset'] == 'nyu':
-        dataset = NYUDataset(subset='training', root_dir='/hand_pose_data/nyu/')
+        dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/')
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/')
     elif config['dataset'] == 'mrsa15':
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
-                              root_dir='../../../hand_pose_data/mrsa15/')
+                              root_dir='/hand_pose_data/mrsa15/')
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
 

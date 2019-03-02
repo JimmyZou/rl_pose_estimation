@@ -134,6 +134,36 @@ class Sampler(object):
             print('avg_rewards({} samples):{:.4f}'.format(self.n_rs, self.avg_r))
         return mul_samples
 
+    def test_one_episode(self, example):
+        # example: (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
+        #           normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+        rs = []
+        self.env.reset(example)
+        obs_width = self.root_obs_width
+        all_done = False
+        while not all_done:
+            local_obs, all_done, chain_done, is_root = self.env.get_obs(obs_width)
+            local_obs = np.expand_dims(np.expand_dims(np.transpose(local_obs, [2, 0, 1]), axis=0), axis=-1)
+            if is_root:
+                ac = self.actor_root.get_action(local_obs)
+                r = self.env.step(ac)
+                if chain_done:
+                    obs_width = self.chain_obs_width
+            else:
+                ac = self.actor_chain.get_action(local_obs)
+                r = self.env.step(ac)
+            rs.append(r)
+        result = (np.mean(rs), self.env.pose, example[0], example[1], example[2],
+                  example[3], example[5], example[6], example[8])
+        return result
+
+    def test_multiple_samples(self):
+        results = []
+        for example in self.dataset.get_samples_testing():
+            results.append(self.test_one_episode(example))
+        return results
+
+
 
 def in_test():
     # multi-processing
