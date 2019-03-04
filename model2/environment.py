@@ -4,12 +4,13 @@ import copy
 
 
 class HandEnv(object):
-    def __init__(self, dataset, subset, max_iters=10):
+    def __init__(self, dataset, subset, max_iters, predefined_bbx):
         self.dataset = dataset
         assert subset in ["training", "testing"]
         self.subset = subset  # ["training", "testing"]
-        self.home_pose, self.chains_idx, self.root_idx, self.predefine_bbx = self.init_home_pose()
+        self.home_pose, self.chains_idx, self.root_idx = self.init_home_pose()
         # the first element is the iterations for root joint, second for chain joints
+        self.predefine_bbx = (predefined_bbx[0] + 1, predefined_bbx[1] + 1, predefined_bbx[2] + 1)
         self.num_chains = len(self.chains_idx)
         self.num_joint = self.home_pose.shape[0]
         self.max_iters = max_iters
@@ -23,13 +24,14 @@ class HandEnv(object):
         self.orig_bbx = None
         self.rotate_mat = None
         self.norm_pose = None
+        self.norm_points = None
         self.norm_bbx = None
         self.volume = None
         self.history_pose = []
         self.dis2targ = []
 
     def init_home_pose(self):
-        if self.dataset == 'NYU':
+        if self.dataset == 'nyu':
             z = 60
             home_pose = np.array([
                 [50, 10, z],  # 1-2
@@ -49,8 +51,7 @@ class HandEnv(object):
             ], dtype=np.float32)
             root_idx = 13
             chains_idx = [[13], [12], [11], [10, 9, 8], [7, 6], [5, 4], [3, 2], [1, 0]]
-            predefine_bbx = (241, 181, 71)
-        elif self.dataset == 'MRSA15':
+        elif self.dataset == 'mrsa15':
             z = 60
             home_pose = np.array([
                 [150, 60, z],  # 1
@@ -77,8 +78,7 @@ class HandEnv(object):
             ], dtype=np.float32)
             root_idx = 0
             chains_idx = [[0], [17, 18, 19, 20], [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
-            predefine_bbx = (181, 121, 71)
-        elif self.dataset == 'ICVL':
+        elif self.dataset == 'icvl':
             z = 30
             home_pose = np.array([
                 [50, 40, z],  # 1
@@ -100,10 +100,9 @@ class HandEnv(object):
             ], dtype=np.float32)
             root_idx = 0
             chains_idx = [[0], [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15]]
-            predefine_bbx = (141, 121, 61)
         else:
-            raise ValueError('Unknown subset %s' % self.subset)
-        return home_pose, chains_idx, root_idx, predefine_bbx
+            raise ValueError('Unknown dataset %s' % self.dataset)
+        return home_pose, chains_idx, root_idx
 
     def reset(self, example):
         """
@@ -117,9 +116,9 @@ class HandEnv(object):
         self.orig_bbx = example[3]  # pose_bbx
         self.rotate_mat = example[5]  # coeff
         self.norm_pose = example[6]
+        self.norm_points = example[7]
         self.norm_bbx = example[8]
         self.volume = example[9]
-        assert self.volume.shape == self.predefine_bbx
         self.pose = copy.copy(self.home_pose)
         self.history_pose.clear()
         self.history_pose.append(self.pose)
@@ -128,7 +127,18 @@ class HandEnv(object):
         self.dis2targ.append(np.linalg.norm(self.norm_pose - self.pose, axis=1).mean())
         self.current_iter = 0
 
-    def adjust_pose(self, ac):
+    def get_obs(self):
+        x_max, y_max, z_max = self.volume.shape
+        pose_volume = np.zeros_like(self.volume, dtype=np.int8)
+        for xyz_joint in self.pose:
+            tmp = xyz_joint.astype(np.int32)
+            joint_coor = (min(tmp[0], x_max - 1), min(tmp[1], y_max - 1), min(tmp[2], z_max - 1))
+            pose_volume[joint_coor] = 2
+        obs = np.stack([self.volume, pose_volume], axis=-1)
+        return obs.astype(np.int8), self.pose
+
+    def adjust_pose(self, ac_flat):
+        ac = np.reshape(ac_flat, [-1, 6])
         # adjust each joint
         pose = np.concatenate([self.pose, np.ones([self.num_joint, 1])], axis=1)
         for idx, chain in enumerate(self.chains_idx):
@@ -152,25 +162,18 @@ class HandEnv(object):
     def step(self, ac):
         is_done = False
         self.current_iter += 1
-        if self.current_iter > 10:
+        if self.current_iter > self.max_iters:
             is_done = True
 
         # ac has the shape [N_joints, 6]
-        assert ac.shape == (self.num_joint, 6)
+        assert ac.shape[0] == self.num_joint * 6
         self.pose = self.adjust_pose(ac)
         self.history_pose.append(self.pose)
 
         # define rewards
         self.dis2targ.append(np.linalg.norm(self.norm_pose - self.pose, axis=1).mean())
         r = self.dis2targ[-1] - self.dis2targ[-2]
-
         return r, is_done
-
-    def get_obs(self):
-        # TODO: volume and pose
-        pass
-
-
 
 
 def in_test():
@@ -181,12 +184,16 @@ def in_test():
     # env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=(4, 2))
     # env.reset(example)
 
-    # from data_preprocessing.nyu_dataset import NYUDataset
-    # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
-    # reader.load_annotation()
-    # example = reader.convert_to_example(reader._annotations[10])
-    # env = HandEnv(dataset='NYU', subset='training')
-    # env.reset(example)
+    from data_preprocessing.nyu_dataset import NYUDataset
+    reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
+    reader.load_annotation()
+    example = reader.convert_to_example(reader._annotations[10])
+    env = HandEnv(dataset='NYU', subset='training', max_iters=10, predefined_bbx=reader.predefined_bbx)
+    env.reset(example)
+
+    obs, pose = env.get_obs()
+    print(np.max(env.volume))
+    reader.plot_skeleton(env.norm_points, env.norm_pose)
     #
     # reader.plot_skeleton(None, env.pose)
     #

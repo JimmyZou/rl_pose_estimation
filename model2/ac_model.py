@@ -16,7 +16,7 @@ def get_target_updates(_vars, target_vars, tau):
 class Actor(object):
     def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
         # obs_width: W, H, D, C; change to D, H, W, C
-        self.obs_dims = (obs_dims[2], obs_dims[1], obs_dims[0], obs_dims[3])
+        self.obs_dims = (obs_dims[2] + 1, obs_dims[1] + 1, obs_dims[0] + 1, 2)
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
         self.ac_dim = ac_dim
@@ -99,7 +99,7 @@ class Actor(object):
 class Critic(object):
     def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
         # obs_width: W, H, D, C; change to D, H, W, C
-        self.obs_dims = (obs_dims[2], obs_dims[1], obs_dims[0], obs_dims[3])
+        self.obs_dims = (obs_dims[2] + 1, obs_dims[1] + 1, obs_dims[0] + 1, 2)
         self.fc_layer = fc_layer
         self.cnn_layer = cnn_layer
         self.ac_dim = ac_dim

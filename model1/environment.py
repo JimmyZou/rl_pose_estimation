@@ -34,7 +34,7 @@ class HandEnv(object):
         self.dis2targ = collections.defaultdict(list)
 
     def init_home_pose(self):
-        if self.dataset == 'NYU':
+        if self.dataset == 'nyu':
             z = 60
             home_pose = np.array([
                 [50, 10, z],  # 1-2
@@ -54,7 +54,7 @@ class HandEnv(object):
             ], dtype=np.float32)
             root_idx = 13
             chains_idx = [[13], [12], [11], [10, 9, 8], [7, 6], [5, 4], [3, 2], [1, 0]]
-        elif self.dataset == 'MRSA15':
+        elif self.dataset == 'mrsa15':
             z = 60
             home_pose = np.array([
                 [150, 60, z],  # 1
@@ -81,7 +81,7 @@ class HandEnv(object):
             ], dtype=np.float32)
             root_idx = 0
             chains_idx = [[0], [17, 18, 19, 20], [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
-        elif self.dataset == 'ICVL':
+        elif self.dataset == 'icvl':
             z = 30
             home_pose = np.array([
                 [50, 40, z],  # 1
