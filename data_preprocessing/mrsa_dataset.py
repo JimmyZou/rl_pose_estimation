@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, test_fold, num_cpu=4, num_imgs_per_file=600, root_dir='/hand_pose_data/mrsa15/'):
+    def __init__(self, subset, test_fold, predefined_bbx=(180, 120, 70), num_cpu=4,
+                 num_imgs_per_file=600, root_dir='/hand_pose_data/mrsa15/'):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -18,6 +19,7 @@ class MRSADataset(BaseDataset):
         self.max_depth = 1000
         self.root_dir = root_dir
         self.num_imgs_per_file = num_imgs_per_file
+        self.predefined_bbx = predefined_bbx
         self.dataset = 'MRSA15'
         self.fold_list = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']
         self.pose_list = '1 2 3 4 5 6 7 8 9 I IP L MP RP T TIP Y'.split(' ')
@@ -118,7 +120,7 @@ class MRSADataset(BaseDataset):
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
         # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
-        preprocessed_example = self.consistent_orientation(example)
+        preprocessed_example = self.consistent_orientation(example, self.predefined_bbx)
 
         # import utils
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
@@ -208,10 +210,11 @@ class MRSADataset(BaseDataset):
 def in_test():
     reader = MRSADataset(subset='pre-processing', test_fold='P0', num_cpu=30, num_imgs_per_file=600)
     reader.load_annotation()
-    # for i in range(7):
+    # for i in range(10):
     #     gap = 501
     #     print(reader._annotations[i * gap][0])
     #     example = reader.convert_to_example(reader._annotations[i * gap])
+    #     print(example[-1].shape)
 
     # for ann in reader._annotations:
     #     if 'P3/3/000289_depth' in ann[0] or 'P3/3/000288_depth' in ann[0]:
@@ -232,20 +235,5 @@ def in_test():
 if __name__ == '__main__':
     in_test()
 
-    # import utils
-    # import glob
-    # import pickle
-    # camera_cfg = (241.42, 241.42, 160, 120, 320, 240)
-    # files = glob.glob('../../../hand_pose_data/mrsa15/data_ppsd/P3*')
-    # for file in files:
-    #     with open(file, 'rb') as f:
-    #         data = pickle.load(f)
-    #         for sample in data:
-    #             if '4/000441_depth' in sample[0] or '4/000442_depth' in sample[0] or '4/000443_depth' in sample[0] \
-    #                     or '4/000444_depth' in sample[0] or '4/000445_depth' in sample[0]:
-    #                 pose = sample[1]
-    #                 depth_img = sample[2]
-    #                 jnt_uvd = utils.xyz2uvd(pose.reshape([-1, 3]), camera_cfg)
-    #                 utils.plot_annotated_depth_img(depth_img, jnt_uvd)
 
 

@@ -28,6 +28,7 @@ class BaseDataset(object):
         self.max_depth = None
         self.test_files = []
         self.train_files = []
+        self.predefined_bbx = None
 
     def load_annotation(self):
         raise NotImplementedError
@@ -81,7 +82,15 @@ class BaseDataset(object):
             volume[idx] += 1
         return volume.astype(np.int8)
 
-    def consistent_orientation(self, example):
+    @staticmethod
+    def convert_to_resized_volume(points, bbx):
+        volume = np.zeros(bbx+1)
+        for point in points:
+            idx = tuple(point.astype(np.int16))
+            volume[idx] += 1
+        return volume.astype(np.int8)
+
+    def consistent_orientation(self, example, predefined_bbx=None):
         filename, xyz_pose, depth_img, pose_bbx, cropped_points = example
 
         self.pca.fit(cropped_points)
@@ -97,9 +106,19 @@ class BaseDataset(object):
         y_min, y_max = np.min(rotated_points[:, 1]), np.max(rotated_points[:, 1])
         z_min, z_max = np.min(rotated_points[:, 2]), np.max(rotated_points[:, 2])
         rotated_bbx = (x_min, x_max, y_min, y_max, z_min, z_max)
-        normalized_rotate_points = rotated_points - np.array([[x_min, y_min, z_min]])
-        normalized_rotate_pose = rotated_pose - np.array([[x_min, y_min, z_min]])
-        volume = self.convert_to_volume(normalized_rotate_points, rotated_bbx)
+        if predefined_bbx is None:
+            normalized_rotate_points = rotated_points - np.array([[x_min, y_min, z_min]])
+            normalized_rotate_pose = rotated_pose - np.array([[x_min, y_min, z_min]])
+            volume = self.convert_to_volume(normalized_rotate_points, rotated_bbx)
+        else:
+            assert len(predefined_bbx) == 3
+            predefined_bbx = np.asarray([predefined_bbx])
+            point1 = np.array([[x_min, y_min, z_min]])
+            point2 = np.array([[x_max, y_max, z_max]])
+            resize_ratio = predefined_bbx / (point2 - point1)
+            normalized_rotate_points = (rotated_points - point1) * resize_ratio
+            normalized_rotate_pose = (rotated_pose - point1) * resize_ratio
+            volume = self.convert_to_resized_volume(normalized_rotate_points, predefined_bbx[0])
         example = (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
                    normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
         return example

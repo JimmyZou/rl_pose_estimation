@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 
 
 class ICVLDataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir='/hand_pose_data/icvl/'):
+    def __init__(self, subset, predefined_bbx=(140, 120, 60), num_cpu=4,
+                 num_imgs_per_file=600, root_dir='/hand_pose_data/icvl/'):
         super(ICVLDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         # self.camera_cfg is a tuple (fx, fy, cx, cy, w, h)
@@ -20,6 +21,7 @@ class ICVLDataset(BaseDataset):
         self.num_imgs_per_file = num_imgs_per_file
         self.dataset = 'ICVL'
         self.pre_depth_img = None
+        self.predefined_bbx = predefined_bbx
 
         if self.subset in ['pps-training']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/train/')
@@ -108,7 +110,7 @@ class ICVLDataset(BaseDataset):
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
         # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
-        preprocessed_example = self.consistent_orientation(example)
+        preprocessed_example = self.consistent_orientation(example, self.predefined_bbx)
 
         # import utils
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
@@ -150,10 +152,11 @@ def in_test():
     # reader = ICVLDataset(subset='pps-training', num_cpu=20, num_imgs_per_file=600)
     reader = ICVLDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
     reader.load_annotation()
-    # for i in range(5):
-    #     gap = 201
+    # for i in range(20):
+    #     gap = 101
     #     print(reader._annotations[i * gap][0])
     #     example = reader.convert_to_example(reader._annotations[i * gap])
+    #     print(example[-1].shape)
 
     # for ann in reader._annotations:
     #     if '201406191014/image_1716.png' in ann[0] or '201406191014/image_1720.png' in ann[0]:

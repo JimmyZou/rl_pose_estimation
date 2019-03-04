@@ -269,17 +269,16 @@ class HandEnv(object):
 
 
 def in_test():
-    env = HandEnv(dataset='NYU', subset='training', iter_per_joint=(4, 2))
-    while not env.get_obs()[1]:
-        pass
+    # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=(4, 2))
+    # while not env.get_obs()[1]:
+    #     pass
 
-    # from data_preprocessing.mrsa_dataset import MRSADataset
-    # reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4,
-    #                      num_imgs_per_file=600, root_dir='../../data/mrsa15/')
-    # reader.load_annotation()
-    # example = reader.convert_to_example(reader._annotations[10])
-    # env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=1)
-    # env.reset(example)
+    from data_preprocessing.mrsa_dataset import MRSADataset
+    reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
+    reader.load_annotation()
+    example = reader.convert_to_example(reader._annotations[10])
+    env = HandEnv(dataset='MRSA15', subset='training', iter_per_joint=(4, 2))
+    env.reset(example)
     #
     # # from data_preprocessing.nyu_dataset import NYUDataset
     # # reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600, root_dir='../../data/nyu/')
@@ -288,12 +287,12 @@ def in_test():
     # # env = HandEnv(dataset='NYU', subset='training', iter_per_joint=3)
     # # env.reset(example)
     #
-    # reader.plot_skeleton(None, env.pose)
-    #
-    # env.get_obs()
-    # r = env.step(np.array([0, 0, np.pi / 4, 10, 0, 0]))
-    # print(r)
-    # reader.plot_skeleton(None, env.pose)
+    reader.plot_skeleton(None, env.pose)
+
+    env.get_obs()
+    r = env.step(np.array([0, 0, np.pi / 4, 10, 0, 0]))
+    print(r)
+    reader.plot_skeleton(None, env.pose)
     #
     # env.get_obs()
     # r = env.step(np.array([0, 0, np.pi / 2, 0, 20, 0]))

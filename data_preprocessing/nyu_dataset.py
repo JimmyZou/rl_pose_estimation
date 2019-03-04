@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 from data_preprocessing.dataset_base import BaseDataset
 import os
 import time
@@ -9,7 +11,8 @@ import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
-    def __init__(self, subset, num_cpu=4, num_imgs_per_file=600, root_dir="/home/data/nyu/"):
+    def __init__(self, subset, predefined_bbx=(240, 180, 70), num_cpu=4,
+                 num_imgs_per_file=600, root_dir="/home/data/nyu/"):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
         self.camera_cfg = (588.235, 587.084, 320, 240, 640, 480)
@@ -17,6 +20,7 @@ class NYUDataset(BaseDataset):
         self.root_dir = root_dir
         self.num_imgs_per_file = num_imgs_per_file
         self.dataset = 'NYU'
+        self.predefined_bbx = predefined_bbx
 
         if self.subset in ['pps-training']:
             self.src_dir = os.path.join(self.root_dir, 'dataset/train/')
@@ -96,7 +100,7 @@ class NYUDataset(BaseDataset):
 
         # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
         # coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
-        preprocessed_example = self.consistent_orientation(example)
+        preprocessed_example = self.consistent_orientation(example, self.predefined_bbx)
 
         # import utils
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
@@ -134,13 +138,14 @@ class NYUDataset(BaseDataset):
 
 
 def in_test():
-    reader = NYUDataset(subset='pps-training', num_cpu=30, num_imgs_per_file=600)
+    reader = NYUDataset(subset='pps-training', num_cpu=15, num_imgs_per_file=600)
     # reader = NYUDataset(subset='pps-testing', num_cpu=30, num_imgs_per_file=600)
     reader.load_annotation()
-    # for i in range(10):
+    # for i in range(5):
     #     gap = 250
     #     print(reader._annotations[i * gap][0])
     #     example = reader.convert_to_example(reader._annotations[i * gap])
+    #     print(example[-1].shape)
 
     # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     reader.store_multi_processors(reader.store_dir)
