@@ -41,16 +41,6 @@ class ICVLDataset(BaseDataset):
         else:
             raise ValueError('Unknown subset %s to %s hand datset' % (subset, self.dataset))
 
-        if self.subset in ['pps-testing', 'pps-training']:
-            if os.path.exists(self.store_dir):
-                # for training or testing after pre-processing
-                self.file_list = glob.glob(self.store_dir)
-                print('[%sDataset] %d %s files are loaded from %s' %
-                      (self.dataset, len(self.file_list), self.subset, self.store_dir))
-            else:
-                os.makedirs(self.store_dir)
-                print('File %s is created to save preprocessed data.' % self.store_dir)
-
         self.jnt_num = 16
         self.pose_dim = 3 * self.jnt_num
         print('[%sDataset] %d joints, with %d dim' % (self.dataset, self.jnt_num, self.pose_dim))

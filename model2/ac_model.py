@@ -51,9 +51,9 @@ class Actor(object):
                                                     data_format='NDHWC',
                                                     scope='3dcnn%i' % idx)
                 last_out = tf.contrib.layers.max_pool3d(inputs=last_out,
-                                                        kernel_size=[2, 2, 2],
-                                                        stride=2,
-                                                        padding='VALID',
+                                                        kernel_size=[3, 3, 3],
+                                                        stride=3,
+                                                        padding='SAME',
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
@@ -87,7 +87,8 @@ class Actor(object):
 
     def train(self, q_gradient, obs):
         # optimization
-        self.sess.run([self.optimizer, self.actor_loss], feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
+        return self.sess.run([self.optimizer, self.actor_loss],
+                             feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
@@ -139,9 +140,9 @@ class Critic(object):
                                                     data_format='NDHWC',
                                                     scope='3dcnn%i' % idx)
                 last_out = tf.contrib.layers.max_pool3d(inputs=last_out,
-                                                        kernel_size=[2, 2, 2],
-                                                        stride=2,
-                                                        padding='VALID',
+                                                        kernel_size=[3, 3, 3],
+                                                        stride=3,
+                                                        padding='SAME',
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
@@ -177,12 +178,61 @@ class Critic(object):
         return self.sess.run(self.q_gradient, feed_dict={self.obs: obs, self.ac: ac})
 
     def train(self, obs, ac, next_obs, next_ac, r, gamma):
-        self.sess.run([self.optimizer, self.q_loss], feed_dict={self.obs: obs, self.ac: ac, self.r: r,
-                                                                self.gamma: gamma, self.target_obs: next_obs,
-                                                                self.target_ac: next_ac})
+        return self.sess.run([self.optimizer, self.q_loss],
+                             feed_dict={self.obs: obs, self.ac: ac, self.r: r,
+                                        self.gamma: gamma, self.target_obs: next_obs,
+                                        self.target_ac: next_ac})
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
 
     def get_target_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.target_scope)
+
+
+def in_test():
+    import numpy as np
+    from data_preprocessing.icvl_dataset import ICVLDataset
+    dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/')
+    # (140, 120, 60), 6 * 16 = 96
+    actor_cnn_layer = (4, 8, 16, 32, 64)
+    actor_fc_layer = (512, 512, 256)
+    critic_cnn_layer = (4, 8, 16, 32, 64)  # 768
+    critic_fc_layer = (512, 96, 512, 128)
+
+    actor = Actor(scope='actor',
+                  obs_dims=dataset.predefined_bbx,
+                  ac_dim=6 * dataset.jnt_num,
+                  cnn_layer=actor_cnn_layer,
+                  fc_layer=actor_fc_layer)
+    tf_config = tf.ConfigProto()
+    tf_config.gpu_options.allow_growth = True
+    with tf.Session(config=tf_config) as sess:
+        actor.load_sess(sess)
+        sess.run(tf.global_variables_initializer())
+        sess.run(actor.update_target_ops)
+
+        obs = np.zeros((2,) + actor.obs_dims)
+        obs[0, 0, 0, 0, 0] = 1
+        q_gradient_input = np.zeros([2, 6 * dataset.jnt_num]) + 0.1
+        _, loss = actor.train(q_gradient_input, obs)
+        print(loss)
+
+    # critic = Critic('critic_root', tau=1)
+    # with tf.Session() as sess:
+    #     critic.load_sess(sess)
+    #     sess.run(tf.global_variables_initializer())
+    #     sess.run(critic.update_target_ops)
+    #
+    #     obs = np.zeros((2,) + critic.obs_dims + (1,))
+    #     obs[0, 0, 0, 0, 0] = 1
+    #     next_obs = obs + 0.1
+    #     ac = np.array([[1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2]])
+    #     next_ac = ac + 0.1
+    #     critic.train(obs, ac, next_obs, next_ac, np.array([[0.1]]), np.array([[0.9]]))
+
+    pass
+
+
+if __name__ == '__main__':
+    in_test()

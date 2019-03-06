@@ -33,18 +33,10 @@ class NYUDataset(BaseDataset):
             self.img_dir = self.src_dir
             self.store_dir = os.path.join(self.root_dir, 'test_data_ppsd/')
         elif self.subset in ['training']:
-            self.train_files = glob.glob(self.root_dir + 'train_data_ppsd/')
-            self.test_files = glob.glob(self.root_dir + 'test_data_ppsd/')
+            self.test_files = glob.glob(os.path.join(self.root_dir, 'test_data_ppsd/*.pkl'))
+            self.train_files = glob.glob(os.path.join(self.root_dir, 'train_data_ppsd/*.pkl'))
         else:
             raise ValueError('Unknown subset %s to %s hand datset' % (subset, self.dataset))
-
-        if os.path.exists(self.store_dir):
-            # for training or testing after pre-processing
-            self.file_list = glob.glob(self.store_dir)
-            print('[NyuDataset] %d %s files are loaded from %s' % (len(self.file_list), self.subset, self.store_dir))
-        else:
-            os.makedirs(self.store_dir)
-            print('File %s is created to save preprocessed data.' % self.store_dir)
 
         # select a part of 14 joints
         self.joint_truncate_idxes = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]

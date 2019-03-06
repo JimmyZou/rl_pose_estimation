@@ -44,3 +44,23 @@
 # ray.init(num_cpus=15, num_gpus=3)
 # samples = [train_root.remote(config) for _ in range(3)]
 # ray.get(samples)
+
+import tensorflow as tf
+import numpy as np
+
+a = tf.placeholder(shape=(None, 10), dtype=tf.float32)
+b = tf.placeholder(shape=(None, 10), dtype=tf.float32)
+
+c = tf.reduce_mean(a + b, axis=0)
+g = tf.gradients(c, a)
+
+tf_config = tf.ConfigProto()
+tf_config.gpu_options.allow_growth = True
+with tf.Session(config=tf_config) as sess:
+    sess.run(tf.global_variables_initializer())
+
+    _a = np.zeros([5, 10]) + 0.1
+    _b = np.zeros([5, 10]) + 0.1
+
+    print(sess.run(c, feed_dict={a: _a, b: _b}))
+    print(sess.run(g, feed_dict={a: _a, b: _b}))

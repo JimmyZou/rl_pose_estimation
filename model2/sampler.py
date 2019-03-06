@@ -2,12 +2,14 @@ import numpy as np
 from collections import deque
 import random
 import pickle
+import tensorflow as tf
 
 
 class ReplayBuffer(object):
     def __init__(self, buffer_size=100000):
         self.num_experiences = 0
         self.buffer = deque(maxlen=buffer_size)
+        self.save_path = None
 
     def get_batch(self, batch_size):
         # Randomly sample batch_size examples
@@ -53,10 +55,16 @@ class ReplayBuffer(object):
         self.buffer = deque()
         self.num_experiences = 0
 
-    def save_as_file(self, path):
-        with open(path, 'wb') as f:
+    def save_as_file(self):
+        with open(self.save_path, 'wb') as f:
             pickle.dump(self.buffer, f)
-            print('[ReplayBuffer] File is saved at %s.' % path)
+            print('[ReplayBuffer] File is saved at %s.' % self.save_path)
+
+    def load_from_file(self):
+        with open(self.save_path, 'rb') as f:
+            samples = pickle.load(f)
+            print('[ReplayBuffer] File is loaded from %s.' % self.save_path)
+            self.add(samples)
 
 
 class Sampler(object):
@@ -95,18 +103,46 @@ class Sampler(object):
         # next obs
         next_obs_pose = obs_pose[1:]
         next_obs_pose.append(obs_pose[-1])
-        gammas[-1] = 0
+        gammas[-1] = np.array([[0]])
         # save to buffer
         samples = list(zip(obs_volume, obs_pose, acs, rs, next_obs_pose, gammas))
-        return samples
+        return samples, self.env.dis2targ[-1]
 
-    def collect_multiple_samples(self, num_files=2):
+    def collect_multiple_samples(self, num_files=4, num_samples=1000):
         mul_samples = []
-        examples = self.dataset.get_batch_samples_training(num_files)
-        for example in examples[0:2]:
+        mul_final_dis = []
+        examples = random.sample(self.dataset.get_batch_samples_training(num_files), num_samples)
+        for example in examples:
             try:
-                mul_samples += self.collect_one_episode(example)
-                print('avg_rewards({} samples):{:.4f}'.format(self.n_rs, self.avg_r))
+                samples, final_dis = self.collect_one_episode(example)
+                mul_samples += samples
+                mul_final_dis.append(final_dis)
             except:
                 print('[Warning] file %s' % example[0])
-        return mul_samples
+        print('avg_rewards({} samples): {:.4f}'.format(self.n_rs, self.avg_r))
+        print('final avg distance: {:.4f} ({:.4f})'.format(np.mean(mul_final_dis), np.std(mul_final_dis)))
+        return mul_samples, np.mean(mul_final_dis), self.avg_r
+
+    def test_one_episode(self, example):
+        # example: (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
+        #           normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+        rs = []
+        is_done = False
+        self.env.reset(example)
+        while not is_done:
+            state, pose = self.env.get_obs()
+            # transpose from WHDC to DHWC
+            state = np.expand_dims(np.transpose(state, [2, 1, 0, 3]), axis=0)
+            ac_flat = self.actor.get_action(state)
+            r, is_done = self.env.step(ac_flat[0, :])
+        result = (self.env.dis2targ[-1], self.env.pose, example[0], example[1], example[2],
+                  example[3], example[5], example[6], example[8])
+        return result
+
+    def test_multiple_samples(self):
+        results = []
+        for example in self.dataset.get_samples_testing():
+            # list of tuples: (final_avg_distance, final_pose, filename, xyz_pose, depth_img, pose_bbx,
+            #                  coeff, normalized_rotate_pose, rotated_bbx)
+            results.append(self.test_one_episode(example))
+        return results

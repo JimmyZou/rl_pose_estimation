@@ -82,7 +82,7 @@ def train_root(config):
                     state, action, reward, new_state, gamma = root_buffer.get_batch(config['batch_size'])
                     # update actor
                     q_gradient = critic_root.get_q_gradient(obs=state, ac=action)
-                    _, actor_loss = actor_root.train(q_gradient=q_gradient, obs=state)
+                    _, actor_loss = actor_root.train(q_gradient=q_gradient[0], obs=state)
                     # update critic
                     next_ac = actor_root.get_target_action(obs=new_state)
                     _, q_loss = critic_root.train(obs=state, ac=action, next_obs=new_state,
