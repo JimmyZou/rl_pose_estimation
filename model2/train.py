@@ -17,9 +17,9 @@ def train(config):
     if config['dataset'] == 'nyu':
         dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/')
         # (240, 180, 70), 6 * 14 = 84
-        actor_cnn_layer = (4, 16, 64, 256)  # 768
+        actor_cnn_layer = (4, 8, 32, 128)  # 768
         actor_fc_layer = (512, 512, 256)
-        critic_cnn_layer = (4, 16, 64, 256)
+        critic_cnn_layer = (4, 8, 32, 128)
         critic_fc_layer = (512, 84, 512, 128)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/')
@@ -32,9 +32,9 @@ def train(config):
         # (180, 120, 70), 6 * 21 = 126
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
                               root_dir='/hand_pose_data/mrsa15/')
-        actor_cnn_layer = (4, 16, 64, 128)  # 768
+        actor_cnn_layer = (4, 8, 32, 128)  # 768
         actor_fc_layer = (512, 512, 256)
-        critic_cnn_layer = (4, 16, 64, 128)
+        critic_cnn_layer = (4, 8, 32, 128)
         critic_fc_layer = (512, 126, 512, 128)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
@@ -150,14 +150,14 @@ def get_config():
     parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/model2/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
     parser.add_argument('--n_rounds', '-nr', type=int, default=100)
-    parser.add_argument('--update_iters', '-ui', type=int, default=200)
+    parser.add_argument('--update_iters', '-ui', type=int, default=100)
     parser.add_argument('--train_iters', '-ni', type=int, default=3)
     parser.add_argument('--dataset', '-data', type=str, default='icvl')
     parser.add_argument('--mrsa_test_fold', '-mtf', type=str, default='P8')
     parser.add_argument('--files_per_time', '-fpt', type=int, default=4)
-    parser.add_argument('--samples_per_time', '-spt', type=int, default=1000)
+    parser.add_argument('--samples_per_time', '-spt', type=int, default=500)
     parser.add_argument('--max_iters', '-mi', type=int, default=5)
-    parser.add_argument('--buffer_size', '-buf', type=int, default=50000)
+    parser.add_argument('--buffer_size', '-buf', type=int, default=5000)
     parser.add_argument('--tau', '-tau', type=float, default=0.01)
     parser.add_argument('--actor_lr', '-alr', type=float, default=1e-6)
     parser.add_argument('--critic_lr', '-clr', type=float, default=1e-5)
