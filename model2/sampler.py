@@ -19,6 +19,7 @@ class ReplayBuffer(object):
         # convert xyz pose to volume pose
         obs, obs_next = [], []
         for i in range(batch_size):
+            # TODO: multi-processors
             # current pose volume
             volume = obs_volume[i]
             _, z_max, y_max, x_max = volume.shape  # NDHW
@@ -113,12 +114,15 @@ class Sampler(object):
         mul_final_dis = []
         examples = random.sample(self.dataset.get_batch_samples_training(num_files), num_samples)
         for example in examples:
-            try:
-                samples, final_dis = self.collect_one_episode(example)
-                mul_samples += samples
-                mul_final_dis.append(final_dis)
-            except:
-                print('[Warning] file %s' % example[0])
+            samples, final_dis = self.collect_one_episode(example)
+            mul_samples += samples
+            mul_final_dis.append(final_dis)
+            # try:
+            #     samples, final_dis = self.collect_one_episode(example)
+            #     mul_samples += samples
+            #     mul_final_dis.append(final_dis)
+            # except:
+            #     print('[Warning] file %s' % example[0])
         print('avg_rewards({} samples): {:.4f}'.format(self.n_rs, self.avg_r))
         print('final avg distance: {:.4f} ({:.4f})'.format(np.mean(mul_final_dis), np.std(mul_final_dis)))
         return mul_samples, np.mean(mul_final_dis), self.avg_r
@@ -126,7 +130,6 @@ class Sampler(object):
     def test_one_episode(self, example):
         # example: (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
         #           normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
-        rs = []
         is_done = False
         self.env.reset(example)
         while not is_done:

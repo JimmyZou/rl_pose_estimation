@@ -133,6 +133,7 @@ class HandEnv(object):
         for xyz_joint in self.pose:
             tmp = xyz_joint.astype(np.int32)
             joint_coor = (min(tmp[0], x_max - 1), min(tmp[1], y_max - 1), min(tmp[2], z_max - 1))
+            # TODO: tmp can be negative
             pose_volume[joint_coor] = 2
         obs = np.stack([self.volume, pose_volume], axis=-1)
         return obs.astype(np.int8), self.pose

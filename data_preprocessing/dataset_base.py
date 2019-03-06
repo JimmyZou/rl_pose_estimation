@@ -79,7 +79,7 @@ class BaseDataset(object):
         # print(bbx, volume.shape)
         for point in points:
             idx = tuple(point.astype(np.int16))
-            volume[idx] += 1
+            volume[idx] = 1
         return volume.astype(np.int8)
 
     @staticmethod
@@ -87,7 +87,7 @@ class BaseDataset(object):
         volume = np.zeros(bbx+1)
         for point in points:
             idx = tuple(point.astype(np.int16))
-            volume[idx] += 1
+            volume[idx] = 1
         return volume.astype(np.int8)
 
     def consistent_orientation(self, example, predefined_bbx=None):
