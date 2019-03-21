@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 from data_preprocessing.dataset_base import BaseDataset
 import os
 import time
@@ -10,7 +12,7 @@ import matplotlib.pyplot as plt
 
 
 class ICVLDataset(BaseDataset):
-    def __init__(self, subset, predefined_bbx=(140, 120, 60), num_cpu=4,
+    def __init__(self, subset, predefined_bbx=(63, 63, 31), num_cpu=4,
                  num_imgs_per_file=600, root_dir='/hand_pose_data/icvl/'):
         super(ICVLDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
@@ -139,8 +141,8 @@ class ICVLDataset(BaseDataset):
 
 
 def in_test():
-    # reader = ICVLDataset(subset='pps-training', num_cpu=20, num_imgs_per_file=600)
-    reader = ICVLDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
+    reader = ICVLDataset(subset='pps-training', num_cpu=10, num_imgs_per_file=600, predefined_bbx=(63, 63, 31))
+    # reader = ICVLDataset(subset='pps-testing', num_cpu=3, num_imgs_per_file=600, predefined_bbx=(63, 63, 31))
     reader.load_annotation()
     # for i in range(20):
     #     gap = 101
@@ -148,16 +150,16 @@ def in_test():
     #     example = reader.convert_to_example(reader._annotations[i * gap])
     #     print(example[-1].shape)
 
-    # for ann in reader._annotations:
-    #     if '201406191014/image_1716.png' in ann[0] or '201406191014/image_1720.png' in ann[0]:
-    #         example = reader.convert_to_example(ann)
-    #         # try:
-    #         #     example = reader.convert_to_example(ann)
-    #         # except:
-    #         #     print('error...%s', ann[0])
+    for ann in reader._annotations:
+        if '201406191044/image_7438.png' in ann[0] or '201406191044/image_6936.png' in ann[0]:
+            example = reader.convert_to_example(ann)
+            print(example[9].shape)
+            # try:
+            #     example = reader.convert_to_example(ann)
+            # except:
+            #     print('error...%s', ann[0])
 
-    # reader.store_preprocessed_data_per_file(reader.annotations()[0:5], 1, reader.store_dir)
-    reader.store_multi_processors(reader.store_dir)
+    # reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)
     # for data in reader.get_samples_testing():

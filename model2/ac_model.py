@@ -44,15 +44,15 @@ class Actor(object):
             for idx, i in enumerate(self.cnn_layer):
                 last_out = tf.contrib.layers.conv3d(inputs=last_out,
                                                     num_outputs=i,
-                                                    kernel_size=3,
+                                                    kernel_size=5,
                                                     activation_fn=tf.nn.elu,
                                                     stride=1,
                                                     padding='SAME',
                                                     data_format='NDHWC',
                                                     scope='3dcnn%i' % idx)
                 last_out = tf.contrib.layers.max_pool3d(inputs=last_out,
-                                                        kernel_size=[3, 3, 3],
-                                                        stride=3,
+                                                        kernel_size=[2, 2, 2],
+                                                        stride=2,
                                                         padding='SAME',
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)
@@ -65,6 +65,7 @@ class Actor(object):
             # the last layer
             ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
+            # TODO: clip the value of ac
         scope_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
         return obs, ac, scope_vars
 
@@ -133,15 +134,15 @@ class Critic(object):
             for idx, i in enumerate(self.cnn_layer):
                 last_out = tf.contrib.layers.conv3d(inputs=last_out,
                                                     num_outputs=i,
-                                                    kernel_size=3,
+                                                    kernel_size=5,
                                                     activation_fn=tf.nn.elu,
                                                     stride=1,
                                                     padding='SAME',
                                                     data_format='NDHWC',
                                                     scope='3dcnn%i' % idx)
                 last_out = tf.contrib.layers.max_pool3d(inputs=last_out,
-                                                        kernel_size=[3, 3, 3],
-                                                        stride=3,
+                                                        kernel_size=[2, 2, 2],
+                                                        stride=2,
                                                         padding='SAME',
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)

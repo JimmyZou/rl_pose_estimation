@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 
 class NYUDataset(BaseDataset):
-    def __init__(self, subset, predefined_bbx=(160, 120, 70), num_cpu=4,
+    def __init__(self, subset, predefined_bbx=(63, 63, 31), num_cpu=4,
                  num_imgs_per_file=600, root_dir="/home/data/nyu/"):
         super(NYUDataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
@@ -130,8 +130,8 @@ class NYUDataset(BaseDataset):
 
 
 def in_test():
-    # reader = NYUDataset(subset='pps-training', num_cpu=20, num_imgs_per_file=600)
-    reader = NYUDataset(subset='pps-testing', num_cpu=30, num_imgs_per_file=600)
+    # reader = NYUDataset(subset='pps-training', num_cpu=15, num_imgs_per_file=600)
+    reader = NYUDataset(subset='pps-testing', num_cpu=15, num_imgs_per_file=600)
     reader.load_annotation()
     # for i in range(5):
     #     gap = 250

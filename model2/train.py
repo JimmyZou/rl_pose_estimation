@@ -16,31 +16,30 @@ import pickle
 
 def train(config):
     if config['dataset'] == 'nyu':
-        dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/')
+        dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/', predefined_bbx=(63, 63, 31))
         # (160, 120, 70), 6 * 14 = 84
-        actor_cnn_layer = (4, 8, 32, 128)  # 512
-        actor_fc_layer = (512, 512, 256)
-        critic_cnn_layer = (4, 8, 32, 128)
+        actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
+        actor_fc_layer = (512, 512, 128)
+        critic_cnn_layer = (8, 16, 32, 64, 128)
         critic_fc_layer = (512, 84, 512, 128)
     elif config['dataset'] == 'icvl':
-        dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/')
+        dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
         # (140, 120, 60), 6 * 16 = 96
-        actor_cnn_layer = (4, 16, 64, 256)  # 1024
-        actor_fc_layer = (512, 512, 256)
-        critic_cnn_layer = (4, 16, 64, 256)
+        actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
+        actor_fc_layer = (512, 512, 128)
+        critic_cnn_layer = (8, 16, 32, 64, 128)
         critic_fc_layer = (512, 96, 512, 128)
     elif config['dataset'] == 'mrsa15':
         # (180, 120, 70), 6 * 21 = 126
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
-                              root_dir='/hand_pose_data/mrsa15/')
-        actor_cnn_layer = (4, 8, 32, 128)  # 768
-        actor_fc_layer = (512, 512, 256)
-        critic_cnn_layer = (4, 8, 32, 128)
+                              root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
+        actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
+        actor_fc_layer = (512, 512, 128)
+        critic_cnn_layer = (8, 16, 32, 64, 128)
         critic_fc_layer = (512, 126, 512, 128)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
 
-    # TODO: on different gpus
     actor = Actor(scope='actor',
                   obs_dims=dataset.predefined_bbx,
                   ac_dim=6 * dataset.jnt_num,
@@ -61,10 +60,6 @@ def train(config):
                   predefined_bbx=dataset.predefined_bbx)
     buffer = ReplayBuffer(buffer_size=config['buffer_size'])
     sampler = Sampler(actor, critic, env, dataset, config['gamma'])
-
-    # tf.summary.scalar('Critic-loss', critic.q_loss)
-    # tf.summary.scalar('Actor-loss', actor.actor_loss)
-    # summary_op = tf.summary.merge_all()
 
     tf_config = tf.ConfigProto()
     tf_config.gpu_options.allow_growth = True
@@ -112,60 +107,58 @@ def train(config):
             # sampling
             samples, avg_dist, avg_r = \
                 sampler.collect_multiple_samples(config['files_per_time'], config['samples_per_time'])
-            # buffer.add(samples)
-            #
-            # # training
-            # actor_loss_list, q_loss_list = [], []
-            # for _ in range(config['train_iters']):
-            #     start_time = time.time()
-            #     for _ in range(config['update_iters']):
-            #         # get a mini-batch of data
-            #         state, action, reward, new_state, gamma = buffer.get_batch(config['batch_size'])
-            #         # update actor
-            #         q_gradient = critic.get_q_gradient(obs=state, ac=action)
-            #         _, actor_loss = actor.train(q_gradient=q_gradient[0], obs=state)
-            #         # update critic
-            #         next_ac = actor.get_target_action(obs=new_state)
-            #         _, q_loss = critic.train(obs=state, ac=action, next_obs=new_state,
-            #                                  next_ac=next_ac, r=reward, gamma=gamma)
-            #         # record result
-            #         actor_loss_list.append(actor_loss)
-            #         q_loss_list.append(q_loss)
-            #         # train_summary = sess.run(summary_op)
-            #         # summary_writer.add_summary(train_summary)
-            #     # update target network
-            #     sess.run([actor.update_target_ops, critic.update_target_ops])
-            #     end_time = time.time()
-            #     print('Actor average loss: {:.4f}, Critic: {:.4f}\nTime used: {:.2f}s'
-            #           .format(np.mean(actor_loss_list), np.mean(q_loss_list), end_time - start_time))
-            #     with open(root_dir + 'loss.pkl', 'wb') as f:
-            #         pickle.dump((actor_loss_list, q_loss_list), f)
-            #         print('Intermediate loss results are saved in %s' % (root_dir + 'loss.pkl'))
-            #
-            # utils.saveToFlat(actor.get_trainable_variables(), save_actor_dir)
-            # utils.saveToFlat(critic.get_trainable_variables(), save_critic_dir)
-            # utils.saveToFlat(actor.get_target_trainable_variables(), save_target_actor_dir)
-            # utils.saveToFlat(critic.get_target_trainable_variables(), save_target_critic_dir)
+            buffer.add(samples)
+
+            # training
+            actor_loss_list, q_loss_list = [], []
+            for _ in range(config['train_iters']):
+                start_time = time.time()
+                for _ in range(config['update_iters']):
+                    # get a mini-batch of data
+                    action, reward, gamma, state, new_state = buffer.get_batch(config['batch_size'])
+                    # update actor
+                    q_gradient = critic.get_q_gradient(obs=state, ac=action)
+                    _, actor_loss = actor.train(q_gradient=q_gradient[0], obs=state)
+                    # update critic
+                    next_ac = actor.get_target_action(obs=new_state)
+                    _, q_loss = critic.train(obs=state, ac=action, next_obs=new_state,
+                                             next_ac=next_ac, r=reward, gamma=gamma)
+                    # record result
+                    actor_loss_list.append(actor_loss)
+                    q_loss_list.append(q_loss)
+                # update target network
+                sess.run([actor.update_target_ops, critic.update_target_ops])
+                end_time = time.time()
+                print('Actor average loss: {:.4f}, Critic: {:.4f}\nTime used: {:.2f}s'
+                      .format(np.mean(actor_loss_list), np.mean(q_loss_list), end_time - start_time))
+                with open(root_dir + 'loss.pkl', 'wb') as f:
+                    pickle.dump((actor_loss_list, q_loss_list), f)
+                    print('Intermediate loss results are saved in %s' % (root_dir + 'loss.pkl'))
+
+            utils.saveToFlat(actor.get_trainable_variables(), save_actor_dir)
+            utils.saveToFlat(critic.get_trainable_variables(), save_critic_dir)
+            utils.saveToFlat(actor.get_target_trainable_variables(), save_target_actor_dir)
+            utils.saveToFlat(critic.get_target_trainable_variables(), save_target_critic_dir)
 
 
 def get_config():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
-    parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/model2/')
+    parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
     parser.add_argument('--n_rounds', '-nr', type=int, default=100)
-    parser.add_argument('--update_iters', '-ui', type=int, default=100)
-    parser.add_argument('--train_iters', '-ni', type=int, default=3)
+    parser.add_argument('--update_iters', '-ui', type=int, default=20)
+    parser.add_argument('--train_iters', '-ni', type=int, default=10)
     parser.add_argument('--dataset', '-data', type=str, default='icvl')
     parser.add_argument('--mrsa_test_fold', '-mtf', type=str, default='P8')
-    parser.add_argument('--files_per_time', '-fpt', type=int, default=4)
-    parser.add_argument('--samples_per_time', '-spt', type=int, default=500)
-    parser.add_argument('--max_iters', '-mi', type=int, default=2)
+    parser.add_argument('--files_per_time', '-fpt', type=int, default=6)
+    parser.add_argument('--samples_per_time', '-spt', type=int, default=1000)
+    parser.add_argument('--max_iters', '-mi', type=int, default=3)
     parser.add_argument('--buffer_size', '-buf', type=int, default=5000)
     parser.add_argument('--tau', '-tau', type=float, default=0.01)
-    parser.add_argument('--actor_lr', '-alr', type=float, default=1e-6)
-    parser.add_argument('--critic_lr', '-clr', type=float, default=1e-5)
+    parser.add_argument('--actor_lr', '-alr', type=float, default=1e-5)
+    parser.add_argument('--critic_lr', '-clr', type=float, default=1e-4)
     parser.add_argument('--gamma', '-gamma', type=float, default=0.9)
     args = vars(parser.parse_args())
     utils.print_args(args)

@@ -2,7 +2,7 @@ import numpy as np
 from collections import deque
 import random
 import pickle
-import tensorflow as tf
+import multiprocessing
 
 
 class ReplayBuffer(object):
@@ -11,38 +11,51 @@ class ReplayBuffer(object):
         self.buffer = deque(maxlen=buffer_size)
         self.save_path = None
 
-    def get_batch(self, batch_size):
+    @staticmethod
+    def xyzpose2volume(volume, xyz_pose, next_xyz_pose, i):
+        _, z_max, y_max, x_max = volume.shape  # NDHW
+        pose_volume = np.zeros_like(volume, dtype=np.int8)
+        next_pose_volume = np.zeros_like(volume, dtype=np.int8)
+
+        for j in range(xyz_pose.shape[1]):
+            tmp = xyz_pose[0, j, :].astype(np.int32)
+            joint_coor = (0, tmp[2], tmp[1], tmp[0])
+            pose_volume[joint_coor] = 2
+
+            tmp = next_xyz_pose[0, j, :].astype(np.int32)
+            joint_coor = (0, tmp[2], tmp[1], tmp[0])
+            next_pose_volume[joint_coor] = 2
+        obs = np.stack([volume, pose_volume], axis=-1)
+        obs_next = np.stack([volume, next_pose_volume], axis=-1)
+        return i, obs, obs_next
+
+    def get_batch(self, batch_size, num_cpus=32):
         # Randomly sample batch_size examples
         # (obs_volume, obs_pose, acs, rs, next_obs_pose, gammas)
         batch = random.sample(self.buffer, batch_size)
         obs_volume, obs_pose, acs, rs, next_obs_pose, gammas = zip(*batch)
         # convert xyz pose to volume pose
-        obs, obs_next = [], []
+        pool = multiprocessing.Pool(num_cpus)
+        results = []
         for i in range(batch_size):
-            # TODO: multi-processors
-            # current pose volume
-            volume = obs_volume[i]
-            _, z_max, y_max, x_max = volume.shape  # NDHW
-            pose_volume = np.zeros_like(volume, dtype=np.int8)
-            next_pose_volume = np.zeros_like(volume, dtype=np.int8)
+            # multi-processing
+            results.append(pool.apply_async(self.xyzpose2volume, (obs_volume[i], obs_pose[i], next_obs_pose[i], i,)))
+        pool.close()
+        pool.join()
+        pool.terminate()
 
-            xyz_pose = obs_pose[i]  # [1, num_joint, 3]
-            next_xyz_pose = next_obs_pose[i]
-            for j in range(xyz_pose.shape[1]):
-                tmp = xyz_pose[0, j, :].astype(np.int32)
-                # NDHW
-                joint_coor = (0, min(tmp[2], z_max - 1), min(tmp[1], y_max - 1), min(tmp[0], x_max - 1))
-                pose_volume[joint_coor] = 2
+        # get result
+        _, D, H, W = obs_volume[0].shape
+        obs = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
+        obs_next = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
+        for result in results:
+            tmp = result.get()
+            obs[tmp[0]: tmp[0] + 1, ...] = tmp[1]
+            obs_next[tmp[0]: tmp[0] + 1, ...] = tmp[2]
 
-                tmp = next_xyz_pose[0, j, :].astype(np.int32)
-                # NDHW
-                joint_coor = (0, min(tmp[2], z_max - 1), min(tmp[1], y_max - 1), min(tmp[0], x_max - 1))
-                next_pose_volume[joint_coor] = 2
-            # NDHWC
-            obs.append(np.stack([volume, pose_volume], axis=-1))
-            obs_next.append(np.stack([volume, next_pose_volume], axis=-1))
         # concatenate to array
-        tmp = [np.concatenate(item, axis=0) for item in [obs, acs, rs, obs_next, gammas]]
+        tmp = [np.concatenate(item, axis=0) for item in [acs, rs, gammas]]
+        tmp += [obs, obs_next]
         return tmp
 
     def add(self, sample):
@@ -74,7 +87,7 @@ class Sampler(object):
         self.critic = critic
         self.env = env
         self.dataset = dataset
-        self.predefine_bbx = self.env.predefine_bbx
+        self.predefined_bbx = self.env.predefined_bbx
         self.gamma = gamma
         self.avg_r = 0
         self.n_rs = 0
@@ -117,12 +130,6 @@ class Sampler(object):
             samples, final_dis = self.collect_one_episode(example)
             mul_samples += samples
             mul_final_dis.append(final_dis)
-            # try:
-            #     samples, final_dis = self.collect_one_episode(example)
-            #     mul_samples += samples
-            #     mul_final_dis.append(final_dis)
-            # except:
-            #     print('[Warning] file %s' % example[0])
         print('avg_rewards({} samples): {:.4f}'.format(self.n_rs, self.avg_r))
         print('final avg distance: {:.4f} ({:.4f})'.format(np.mean(mul_final_dis), np.std(mul_final_dis)))
         return mul_samples, np.mean(mul_final_dis), self.avg_r

@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 from data_preprocessing.dataset_base import BaseDataset
 import os
 import time
@@ -10,7 +12,7 @@ import matplotlib.pyplot as plt
 
 
 class MRSADataset(BaseDataset):
-    def __init__(self, subset, test_fold, predefined_bbx=(180, 120, 70), num_cpu=4,
+    def __init__(self, subset, test_fold, predefined_bbx=(63, 63, 31), num_cpu=4,
                  num_imgs_per_file=600, root_dir='/hand_pose_data/mrsa15/'):
         super(MRSADataset, self).__init__(subset, num_imgs_per_file, num_cpu)
 
@@ -208,23 +210,26 @@ class MRSADataset(BaseDataset):
 
 
 def in_test():
-    reader = MRSADataset(subset='pre-processing', test_fold='P0', num_cpu=30, num_imgs_per_file=600)
+    reader = MRSADataset(subset='pre-processing', test_fold='P0', num_cpu=15, num_imgs_per_file=600,
+                         predefined_bbx=(63, 63, 31))
     reader.load_annotation()
-    # for i in range(10):
+    # for i in range(5):
     #     gap = 501
     #     print(reader._annotations[i * gap][0])
     #     example = reader.convert_to_example(reader._annotations[i * gap])
-    #     print(example[-1].shape)
+    #     print(example[-1].shape, np.sum(example[-1] >= 2))
 
+    # from model2.environment import HandEnv
+    # env = HandEnv(dataset='mrsa15',
+    #               subset='training',
+    #               max_iters=5,
+    #               predefined_bbx=reader.predefined_bbx)
     # for ann in reader._annotations:
-    #     if 'P3/3/000289_depth' in ann[0] or 'P3/3/000288_depth' in ann[0]:
+    #     if 'P6/8/000421_depth.bin' in ann[0] or 'P6/8/000422_depth.bin' in ann[0]:
     #         example = reader.convert_to_example(ann)
-    #         # try:
-    #         #     example = reader.convert_to_example(ann)
-    #         # except:
-    #         #     print('error...%s', ann[0])
+    #         label_lie_algebra, warning = env.pose_to_lie_algebras(example[6])
+    #         print(label_lie_algebra)
 
-    # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)

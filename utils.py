@@ -51,6 +51,9 @@ def loadFromFlat(var_list, param_pkl_path):
     tf.get_default_session().run(op, {theta: flat_params})
 
 
+"""=================Lie groups related functions=================="""
+
+
 def expmap2rotmat(A):
     # omega to R
     theta = np.linalg.norm(A)
@@ -69,6 +72,102 @@ def lietomatrix(angle, trans):
     T = trans
     SEmatrix = np.concatenate((np.concatenate((R, T.reshape(3, 1)), axis=1), np.array([[0, 0, 0, 1]])))
     return SEmatrix
+
+
+def findrot(u, v):
+    if (v == np.array([-1, 0, 0])).all():
+        return np.array([0, 0, np.pi])
+    # compute omega
+    w = np.cross(u, v)
+    w_norm = np.linalg.norm(w)
+    if w_norm < 1e-6:
+        A = np.zeros(3)
+    else:
+        A = w / w_norm * np.arccos(np.dot(u, v))
+    return A
+
+
+def rotmat2expmap(R):
+    # R to omega
+    theta = np.arccos(np.clip((np.trace(R) - 1) / 2.0, -1, 1))
+    if theta < 1e-6:
+        A = np.zeros((3, 1))
+    else:
+        A = theta / (2 * np.sin(theta)) * np.array([[R[2, 1] - R[1, 2]], [R[0, 2] - R[2, 0]], [R[1, 0] - R[0, 1]]])
+    return A
+
+
+def inverse_kinematics(joint_xyz, chain_idx, warning=False):
+    # joint_xyz: [num_joints, 3]
+    njoints = joint_xyz.shape[0]
+    lie_paras = np.zeros([njoints, 6])
+
+    root_idx = chain_idx[0][0]
+    lie_paras[root_idx, 3:6] = joint_xyz[root_idx, :]
+
+    for _idx in chain_idx[1:]:
+        # append root joint idx
+        idx = [root_idx] + _idx
+        # t
+        for j in range(len(idx)-1):
+            lie_paras[idx[j+1], 3] = np.linalg.norm(joint_xyz[idx[j+1], :] - joint_xyz[idx[j], :])
+        # omega
+        for j in range(len(idx)-2, -1, -1):
+            v = joint_xyz[idx[j+1], :] - joint_xyz[idx[j], :]
+            vhat = v / np.linalg.norm(v)
+
+            if j == 0:
+                uhat = np.array([1, 0, 0])
+            else:
+                u = joint_xyz[idx[j], :] - joint_xyz[idx[j-1], :]
+                uhat = u / np.linalg.norm(u)
+            A = expmap2rotmat(findrot(np.array([1, 0, 0]), uhat))
+            B = expmap2rotmat(findrot(np.array([1, 0, 0]), vhat))
+            lie_paras[idx[j+1], 0:3] = np.squeeze(rotmat2expmap(np.matmul(A.T, B)))
+    return lie_paras
+
+
+def computelie(lie_params):
+    # lie_params [N, 6], compute g_{1:N} [N, 4, 4]
+    njoints = np.shape(lie_params)[0]
+    A = np.zeros((njoints, 4, 4))
+
+    for j in range(njoints):
+        if j == 0:
+            A[j, :, :] = lietomatrix(lie_params[j+1, 0:3], lie_params[j, 3:6])
+        elif j == njoints-1:
+            tmp = lietomatrix(np.array([0, 0, 0]), lie_params[j, 3:6])
+            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
+        else:
+            tmp = lietomatrix(lie_params[j+1, 0:3], lie_params[j, 3:6])
+            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
+
+    tmp_coor = np.array([0, 0, 0, 1]).reshape((4, 1))
+    joint_xyz = np.matmul(A, tmp_coor)[:, 0:3, 0]
+    return joint_xyz
+
+
+def forward_kinematics(lie_paras, chain_idx):
+    # lie_params [njoints, 6]
+    njoints = lie_paras.shape[0]
+    joint_xyz_f = np.zeros([njoints, 3])
+
+    root_idx = chain_idx[0][0]
+    for k, _idx in enumerate(chain_idx):
+        if k == 0:
+            # root joint
+            A = lietomatrix(lie_paras[root_idx, 0:3], lie_paras[root_idx, 3:6])
+            tmp = np.array([0, 0, 0, 1]).reshape((4, 1))
+            joint_xyz_f[root_idx, :] = np.matmul(A, tmp)[0:3, 0]
+        else:
+            # append root joint idx
+            idx = [root_idx] + _idx
+            joint_xyz = computelie(lie_paras[idx, :])
+            joint_xyz_f[idx[1:], :] = joint_xyz[1:]
+    return joint_xyz_f
+
+
+"""=================hand pose related functions=================="""
 
 
 def plot_3d_points(data):
