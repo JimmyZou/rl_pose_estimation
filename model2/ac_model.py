@@ -1,6 +1,53 @@
 import tensorflow as tf
 
 
+class Pretrain(object):
+    def __init__(self, scope, obs_dims, cnn_layer, fc_layer, ac_dim):
+        self.scope = scope
+        self.obs_dims = obs_dims
+        self.cnn_layer = cnn_layer
+        self.fc_layer = fc_layer
+        self.ac_dim = ac_dim
+        self.obs, self.ac, self.dropout_prob = self.build_model()
+
+    def build_model(self):
+        print('building model %s' % self.scope)
+        with tf.variable_scope(self.scope):
+            obs = tf.placeholder(shape=(None,) + self.obs_dims, dtype=tf.float32, name='state')
+            dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
+
+            last_out = tf.identity(obs)
+            for idx, i in enumerate(self.cnn_layer):
+                last_out = tf.contrib.layers.conv3d(inputs=last_out,
+                                                    num_outputs=i,
+                                                    kernel_size=5,
+                                                    activation_fn=tf.nn.elu,
+                                                    stride=1,
+                                                    padding='SAME',
+                                                    data_format='NDHWC',
+                                                    scope='3dcnn%i' % idx)
+                last_out = tf.contrib.layers.max_pool3d(inputs=last_out,
+                                                        kernel_size=[2, 2, 2],
+                                                        stride=2,
+                                                        padding='SAME',
+                                                        data_format='NDHWC',
+                                                        scope='maxpooling%i' % idx)
+            fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
+            for idx, i in enumerate(self.fc_layer):
+                fc_out = tf.contrib.layers.dropout(
+                    tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                      num_outputs=i,
+                                                      activation_fn=tf.nn.elu,
+                                                      scope='fc%i' % idx), keep_prob=dropout_prob)
+            # the last layer
+            ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
+                                                   activation_fn=None, scope='last_fc')
+        return obs, ac, dropout_prob
+
+    def get_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+
+
 def get_target_updates(_vars, target_vars, tau):
     print('--------------------------------------------------------------------------')
     print('setting up target updates ...')
