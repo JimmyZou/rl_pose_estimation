@@ -135,7 +135,8 @@ def pre_train(config):
     global_step = tf.Variable(0, trainable=False, name='step')
     lr = tf.train.exponential_decay(config['lr_start'], global_step,
                                     config['lr_decay_iters'], config['lr_decay_rate'])
-    optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
+    # optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
+    optimizer = tf.train.RMSPropOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
 
     tf_config = tf.ConfigProto()
     tf_config.gpu_options.allow_growth = True
@@ -211,7 +212,7 @@ def get_config():
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
     parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
-    parser.add_argument('--n_rounds', '-nr', type=int, default=500)
+    parser.add_argument('--n_rounds', '-nr', type=int, default=800)
     parser.add_argument('--train_iters', '-ni', type=int, default=100)
     parser.add_argument('--dataset', '-data', type=str, default='mrsa15')
     parser.add_argument('--mrsa_test_fold', '-mtf', type=str, default='P8')
@@ -219,7 +220,7 @@ def get_config():
     parser.add_argument('--samples_per_time', '-spt', type=int, default=2000)
     parser.add_argument('--lr_start', '-lr', help='learning rate', type=float, default=0.0001)
     parser.add_argument('--lr_decay_rate', default=0.99)
-    parser.add_argument('--lr_decay_iters', default=250)
+    parser.add_argument('--lr_decay_iters', default=500)
     parser.add_argument('--new_training', '-new', type=bool, default=1)
     parser.add_argument('--test_gap', '-tg', type=int, default=2)
     parser.add_argument('--num_cpus', '-cpus', type=int, default=20)
