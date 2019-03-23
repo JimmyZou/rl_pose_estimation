@@ -8,13 +8,14 @@ class Pretrain(object):
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
         self.ac_dim = ac_dim
-        self.obs, self.ac, self.dropout_prob = self.build_model()
+        self.obs, self.ac, self.dropout_prob, self.home_lie_algebra = self.build_model()
 
     def build_model(self):
         print('building model %s' % self.scope)
         with tf.variable_scope(self.scope):
             obs = tf.placeholder(shape=(None,) + self.obs_dims, dtype=tf.float32, name='state')
             dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
+            home_lie_algebra = tf.placeholder(shape=(1, self.ac_dim), dtype=tf.float32)
 
             last_out = tf.identity(obs)
             for idx, i in enumerate(self.cnn_layer):
@@ -34,6 +35,8 @@ class Pretrain(object):
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
             for idx, i in enumerate(self.fc_layer):
+                if idx == 2:
+                    fc_out = fc_out + home_lie_algebra
                 fc_out = tf.contrib.layers.dropout(
                     tf.contrib.layers.fully_connected(inputs=fc_out,
                                                       num_outputs=i,
@@ -42,7 +45,7 @@ class Pretrain(object):
             # the last layer
             ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
-        return obs, ac, dropout_prob
+        return obs, ac, dropout_prob, home_lie_algebra
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)

@@ -98,23 +98,25 @@ def collect_test_samples(env, dataset, home_pose_volume, num_cpus):
 def pre_train(config):
     if config['dataset'] == 'nyu':
         dataset = NYUDataset(subset='training', root_dir='/hand_pose_data/nyu/', predefined_bbx=(63, 63, 31))
+        ac_dim = 4 * dataset.jnt_num - 1
         # (160, 120, 70), 6 * 14 = 84
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, 512, 256)
+        fc_layer = (512, ac_dim, 512, 256)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
+        ac_dim = 4 * dataset.jnt_num - 1
         # (140, 120, 60), 6 * 16 = 96
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, 512, 256)
+        fc_layer = (512, ac_dim, 512, 256)
     elif config['dataset'] == 'mrsa15':
         # (180, 120, 70), 6 * 21 = 126
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
                               root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
+        ac_dim = 4 * dataset.jnt_num - 1
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, 512, 256)
+        fc_layer = (512, ac_dim, 512, 256)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
-    ac_dim = 4 * dataset.jnt_num - 1
     obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 2)
     env = HandEnv(dataset=config['dataset'],
                   subset='training',
@@ -128,8 +130,7 @@ def pre_train(config):
     # define model and loss
     model = Pretrain(scope, obs_dims, cnn_layer, fc_layer, ac_dim)  # model.obs, model.ac, model.dropout_prob
     label = tf.placeholder(shape=(None, ac_dim), dtype=tf.float32, name='action')
-    tf_home_lie_algebra = tf.placeholder(shape=(1, ac_dim), dtype=tf.float32)
-    tf_mse = tf.reduce_sum(0.5 * tf.square(model.ac + tf_home_lie_algebra - label), axis=1)
+    tf_mse = tf.reduce_sum(0.5 * tf.square(model.ac - label), axis=1)
     tf_loss = tf.reduce_mean(tf_mse)
 
     global_step = tf.Variable(0, trainable=False, name='step')
@@ -170,7 +171,7 @@ def pre_train(config):
                     batch_loss = sess.run(tf_mse,
                                           feed_dict={model.obs: x_test[idx1: idx2],
                                                      label: y_test[idx1: idx2],
-                                                     tf_home_lie_algebra: home_lie_algebra,
+                                                     model.home_lie_algebra: home_lie_algebra,
                                                      model.dropout_prob: 1.0})
                     loss_list.append(batch_loss)
                 test_loss = np.mean(np.hstack(loss_list))
@@ -196,7 +197,7 @@ def pre_train(config):
                 _, batch_loss, step = sess.run([optimizer, tf_loss, global_step],
                                                feed_dict={model.obs: x_train[batch_idx],
                                                           label: y_train[batch_idx],
-                                                          tf_home_lie_algebra: home_lie_algebra,
+                                                          model.home_lie_algebra: home_lie_algebra,
                                                           model.dropout_prob: 0.5})
                 loss_list.append(batch_loss)
             end_time = time.time()
