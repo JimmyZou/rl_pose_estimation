@@ -101,23 +101,23 @@ def pre_train(config):
         ac_dim = 4 * dataset.jnt_num - 1
         # (160, 120, 70), 6 * 14 = 84
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, ac_dim, 512, 256)
+        fc_layer = (512, 512, 256)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
         ac_dim = 4 * dataset.jnt_num - 1
         # (140, 120, 60), 6 * 16 = 96
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, ac_dim, 512, 256)
+        fc_layer = (512, 512, 256)
     elif config['dataset'] == 'mrsa15':
         # (180, 120, 70), 6 * 21 = 126
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
                               root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
         ac_dim = 4 * dataset.jnt_num - 1
         cnn_layer = (8, 16, 32, 64, 128)  # 512
-        fc_layer = (512, ac_dim, 512, 256)
+        fc_layer = (512, 512, 256)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
-    obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 2)
+    obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 1)
     env = HandEnv(dataset=config['dataset'],
                   subset='training',
                   max_iters=5,
@@ -136,8 +136,8 @@ def pre_train(config):
     global_step = tf.Variable(0, trainable=False, name='step')
     lr = tf.train.exponential_decay(config['lr_start'], global_step,
                                     config['lr_decay_iters'], config['lr_decay_rate'])
-    # optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
-    optimizer = tf.train.RMSPropOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
+    optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
+    # optimizer = tf.train.RMSPropOptimizer(learning_rate=lr).minimize(loss=tf_loss, global_step=global_step)
 
     tf_config = tf.ConfigProto()
     tf_config.gpu_options.allow_growth = True
@@ -169,7 +169,7 @@ def pre_train(config):
                     idx1 = j * batch_size
                     idx2 = min((j + 1) * batch_size, n_test)
                     batch_loss = sess.run(tf_mse,
-                                          feed_dict={model.obs: x_test[idx1: idx2],
+                                          feed_dict={model.obs: x_test[idx1: idx2, :, :, :, 0:1],
                                                      label: y_test[idx1: idx2],
                                                      model.home_lie_algebra: np.repeat(home_lie_algebra, idx2-idx1, axis=0),
                                                      model.dropout_prob: 1.0})
@@ -195,7 +195,7 @@ def pre_train(config):
             for _ in range(config['train_iters']):
                 batch_idx = np.random.randint(0, x_train.shape[0], batch_size)
                 _, batch_loss, step = sess.run([optimizer, tf_loss, global_step],
-                                               feed_dict={model.obs: x_train[batch_idx],
+                                               feed_dict={model.obs: x_train[batch_idx, :, :, :, 0:1],
                                                           label: y_train[batch_idx],
                                                           model.home_lie_algebra: np.repeat(home_lie_algebra, batch_size, axis=0),
                                                           model.dropout_prob: 0.5})
@@ -213,7 +213,7 @@ def get_config():
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
     parser.add_argument('--saved_model_path', '-smp', type=str, default='../../results/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
-    parser.add_argument('--n_rounds', '-nr', type=int, default=1000)
+    parser.add_argument('--n_rounds', '-nr', type=int, default=2000)
     parser.add_argument('--train_iters', '-ni', type=int, default=100)
     parser.add_argument('--dataset', '-data', type=str, default='mrsa15')
     parser.add_argument('--mrsa_test_fold', '-mtf', type=str, default='P8')
@@ -221,7 +221,7 @@ def get_config():
     parser.add_argument('--samples_per_time', '-spt', type=int, default=2000)
     parser.add_argument('--lr_start', '-lr', help='learning rate', type=float, default=0.0001)
     parser.add_argument('--lr_decay_rate', default=0.99)
-    parser.add_argument('--lr_decay_iters', default=500)
+    parser.add_argument('--lr_decay_iters', default=1000)
     parser.add_argument('--new_training', '-new', type=bool, default=1)
     parser.add_argument('--test_gap', '-tg', type=int, default=2)
     parser.add_argument('--num_cpus', '-cpus', type=int, default=20)
