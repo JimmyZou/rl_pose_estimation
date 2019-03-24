@@ -171,7 +171,7 @@ def pre_train(config):
                     batch_loss = sess.run(tf_mse,
                                           feed_dict={model.obs: x_test[idx1: idx2],
                                                      label: y_test[idx1: idx2],
-                                                     model.home_lie_algebra: home_lie_algebra,
+                                                     model.home_lie_algebra: np.repeat(home_lie_algebra, idx2-idx1, axis=0),
                                                      model.dropout_prob: 1.0})
                     loss_list.append(batch_loss)
                 test_loss = np.mean(np.hstack(loss_list))
@@ -197,7 +197,7 @@ def pre_train(config):
                 _, batch_loss, step = sess.run([optimizer, tf_loss, global_step],
                                                feed_dict={model.obs: x_train[batch_idx],
                                                           label: y_train[batch_idx],
-                                                          model.home_lie_algebra: home_lie_algebra,
+                                                          model.home_lie_algebra: np.repeat(home_lie_algebra, batch_size, axis=0),
                                                           model.dropout_prob: 0.5})
                 loss_list.append(batch_loss)
             end_time = time.time()

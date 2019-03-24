@@ -15,7 +15,7 @@ class Pretrain(object):
         with tf.variable_scope(self.scope):
             obs = tf.placeholder(shape=(None,) + self.obs_dims, dtype=tf.float32, name='state')
             dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
-            home_lie_algebra = tf.placeholder(shape=(1, self.ac_dim), dtype=tf.float32)
+            home_lie_algebra = tf.placeholder(shape=(None, self.ac_dim), dtype=tf.float32)
 
             last_out = tf.identity(obs)
             for idx, i in enumerate(self.cnn_layer):
@@ -36,7 +36,8 @@ class Pretrain(object):
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
             for idx, i in enumerate(self.fc_layer):
                 if idx == 2:
-                    fc_out = fc_out + home_lie_algebra
+                    assert i == self.ac_dim
+                    fc_out = tf.concat([fc_out, home_lie_algebra], axis=1)
                 fc_out = tf.contrib.layers.dropout(
                     tf.contrib.layers.fully_connected(inputs=fc_out,
                                                       num_outputs=i,
