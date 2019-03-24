@@ -211,7 +211,7 @@ def get_config():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
-    parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/')
+    parser.add_argument('--saved_model_path', '-smp', type=str, default='../../results/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
     parser.add_argument('--n_rounds', '-nr', type=int, default=1000)
     parser.add_argument('--train_iters', '-ni', type=int, default=100)
