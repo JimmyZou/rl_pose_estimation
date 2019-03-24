@@ -35,14 +35,14 @@ class Pretrain(object):
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
             for idx, i in enumerate(self.fc_layer):
-                if idx == 2:
-                    assert i == self.ac_dim
-                    fc_out = tf.concat([fc_out, home_lie_algebra], axis=1)
                 fc_out = tf.contrib.layers.dropout(
                     tf.contrib.layers.fully_connected(inputs=fc_out,
                                                       num_outputs=i,
                                                       activation_fn=tf.nn.elu,
                                                       scope='fc%i' % idx), keep_prob=dropout_prob)
+                if idx == 1:
+                    assert i == self.ac_dim
+                    fc_out = tf.concat([fc_out, home_lie_algebra], axis=1)
             # the last layer
             ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
