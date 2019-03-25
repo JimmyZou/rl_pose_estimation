@@ -8,14 +8,13 @@ class Pretrain(object):
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
         self.ac_dim = ac_dim
-        self.obs, self.ac, self.dropout_prob, self.home_lie_algebra = self.build_model()
+        self.obs, self.ac, self.dropout_prob = self.build_model()
 
     def build_model(self):
         print('building model %s' % self.scope)
         with tf.variable_scope(self.scope):
             obs = tf.placeholder(shape=(None,) + self.obs_dims, dtype=tf.float32, name='state')
             dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
-            home_lie_algebra = tf.placeholder(shape=(None, self.ac_dim), dtype=tf.float32)
 
             last_out = tf.identity(obs)
             for idx, i in enumerate(self.cnn_layer):
@@ -34,19 +33,37 @@ class Pretrain(object):
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
-            for idx, i in enumerate(self.fc_layer):
-                fc_out = tf.contrib.layers.dropout(
-                    tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                      num_outputs=i,
-                                                      activation_fn=tf.nn.elu,
-                                                      scope='fc%i' % idx), keep_prob=dropout_prob)
-                # if idx == 1:
-                #     assert i == self.ac_dim
-                #     fc_out = tf.concat([fc_out, home_lie_algebra], axis=1)
-            # the last layer
-            ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
+            # for idx, i in enumerate(self.fc_layer):
+            #     fc_out = tf.contrib.layers.dropout(
+            #         tf.contrib.layers.fully_connected(inputs=fc_out,
+            #                                           num_outputs=i,
+            #                                           activation_fn=tf.nn.elu,
+            #                                           scope='fc%i' % idx), keep_prob=dropout_prob)
+            # # the last layer
+            # ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
+            #                                        activation_fn=None, scope='last_fc')
+
+            fc_out1 = tf.contrib.layers.dropout(
+                tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                  num_outputs=self.fc_layer[0],
+                                                  activation_fn=tf.nn.elu,
+                                                  scope='fc1'), keep_prob=dropout_prob)
+            fc_out2 = fc_out + tf.contrib.layers.dropout(
+                tf.contrib.layers.fully_connected(inputs=fc_out1,
+                                                  num_outputs=self.fc_layer[1],
+                                                  activation_fn=tf.nn.elu,
+                                                  scope='fc2'), keep_prob=dropout_prob)
+
+            fc_out3 = tf.contrib.layers.dropout(
+                tf.contrib.layers.fully_connected(inputs=fc_out2,
+                                                  num_outputs=self.fc_layer[2],
+                                                  activation_fn=tf.nn.elu,
+                                                  scope='fc3'), keep_prob=dropout_prob)
+
+            ac = tf.contrib.layers.fully_connected(inputs=fc_out3, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
-        return obs, ac, dropout_prob, home_lie_algebra
+
+        return obs, ac, dropout_prob
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
