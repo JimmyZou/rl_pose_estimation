@@ -33,35 +33,35 @@ class Pretrain(object):
                                                         data_format='NDHWC',
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
-            # for idx, i in enumerate(self.fc_layer):
-            #     fc_out = tf.contrib.layers.dropout(
-            #         tf.contrib.layers.fully_connected(inputs=fc_out,
-            #                                           num_outputs=i,
-            #                                           activation_fn=tf.nn.elu,
-            #                                           scope='fc%i' % idx), keep_prob=dropout_prob)
-            # # the last layer
-            # ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
-            #                                        activation_fn=None, scope='last_fc')
-
-            fc_out1 = tf.contrib.layers.dropout(
-                tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                  num_outputs=self.fc_layer[0],
-                                                  activation_fn=tf.nn.elu,
-                                                  scope='fc1'), keep_prob=dropout_prob)
-            fc_out2 = fc_out + tf.contrib.layers.dropout(
-                tf.contrib.layers.fully_connected(inputs=fc_out1,
-                                                  num_outputs=self.fc_layer[1],
-                                                  activation_fn=tf.nn.elu,
-                                                  scope='fc2'), keep_prob=dropout_prob)
-
-            fc_out3 = tf.contrib.layers.dropout(
-                tf.contrib.layers.fully_connected(inputs=fc_out2,
-                                                  num_outputs=self.fc_layer[2],
-                                                  activation_fn=tf.nn.elu,
-                                                  scope='fc3'), keep_prob=dropout_prob)
-
-            ac = tf.contrib.layers.fully_connected(inputs=fc_out3, num_outputs=self.ac_dim,
+            for idx, i in enumerate(self.fc_layer):
+                fc_out = tf.contrib.layers.dropout(
+                    tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                      num_outputs=i,
+                                                      activation_fn=tf.nn.elu,
+                                                      scope='fc%i' % idx), keep_prob=dropout_prob)
+            # the last layer
+            ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
+
+            # fc_out1 = tf.contrib.layers.dropout(
+            #     tf.contrib.layers.fully_connected(inputs=fc_out,
+            #                                       num_outputs=self.fc_layer[0],
+            #                                       activation_fn=tf.nn.elu,
+            #                                       scope='fc1'), keep_prob=dropout_prob)
+            # fc_out2 = fc_out + tf.contrib.layers.dropout(
+            #     tf.contrib.layers.fully_connected(inputs=fc_out1,
+            #                                       num_outputs=self.fc_layer[1],
+            #                                       activation_fn=tf.nn.elu,
+            #                                       scope='fc2'), keep_prob=dropout_prob)
+            #
+            # fc_out3 = tf.contrib.layers.dropout(
+            #     tf.contrib.layers.fully_connected(inputs=fc_out2,
+            #                                       num_outputs=self.fc_layer[2],
+            #                                       activation_fn=tf.nn.elu,
+            #                                       scope='fc3'), keep_prob=dropout_prob)
+            #
+            # ac = tf.contrib.layers.fully_connected(inputs=fc_out3, num_outputs=self.ac_dim,
+            #                                        activation_fn=None, scope='last_fc')
 
         return obs, ac, dropout_prob
 
