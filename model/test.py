@@ -3,9 +3,9 @@ sys.path.append('..')
 from data_preprocessing.nyu_dataset import NYUDataset
 from data_preprocessing.icvl_dataset import ICVLDataset
 from data_preprocessing.mrsa_dataset import MRSADataset
-from model2.environment import HandEnv
-from model2.sampler import ReplayBuffer, Sampler
-from model2.ac_model import Actor, Critic
+from model.environment import HandEnv
+from model.sampler import ReplayBuffer, Sampler
+from model.ac_model import Actor, Critic
 import os
 import tensorflow as tf
 import utils

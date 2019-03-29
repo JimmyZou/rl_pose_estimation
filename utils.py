@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import pickle
 import tensorflow as tf
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def print_args(args):
@@ -130,7 +131,7 @@ def inverse_kinematics(joint_xyz, chain_idx, warning=False):
 def computelie(lie_params):
     # lie_params [N, 6], compute g_{1:N} [N, 4, 4]
     njoints = np.shape(lie_params)[0]
-    A = np.zeros((njoints, 4, 4))
+    A = np.zeros([njoints, 4, 4])
 
     for j in range(njoints):
         if j == 0:
@@ -144,13 +145,14 @@ def computelie(lie_params):
 
     tmp_coor = np.array([0, 0, 0, 1]).reshape((4, 1))
     joint_xyz = np.matmul(A, tmp_coor)[:, 0:3, 0]
-    return joint_xyz
+    return joint_xyz, A
 
 
 def forward_kinematics(lie_paras, chain_idx):
     # lie_params [njoints, 6]
     njoints = lie_paras.shape[0]
     joint_xyz_f = np.zeros([njoints, 3])
+    lie_group = np.zeros([njoints, 4, 4])
 
     root_idx = chain_idx[0][0]
     for k, _idx in enumerate(chain_idx):
@@ -159,12 +161,47 @@ def forward_kinematics(lie_paras, chain_idx):
             A = lietomatrix(lie_paras[root_idx, 0:3], lie_paras[root_idx, 3:6])
             tmp = np.array([0, 0, 0, 1]).reshape((4, 1))
             joint_xyz_f[root_idx, :] = np.matmul(A, tmp)[0:3, 0]
+            lie_group[root_idx, :, :] = A
         else:
             # append root joint idx
             idx = [root_idx] + _idx
-            joint_xyz = computelie(lie_paras[idx, :])
+            joint_xyz, A = computelie(lie_paras[idx, :])
             joint_xyz_f[idx[1:], :] = joint_xyz[1:]
-    return joint_xyz_f
+            lie_group[idx[1:], :, :] = A[1:, :, :]
+    return joint_xyz_f, lie_group
+
+
+def pose_to_lie_algebras(pose, chains_idx):
+    """
+    inverse kinematics to lie algebras and remove redundant lie algebras
+    """
+    lie_algebras = inverse_kinematics(pose, chains_idx)
+    label_lie_algebras = []
+    for idx, chain in enumerate(chains_idx):
+        if idx == 0:
+            label_lie_algebras.append(lie_algebras[chain, 3:6].reshape([-1]))
+        else:
+            label_lie_algebras.append(lie_algebras[chain, 0:4].reshape([-1]))
+    label = np.hstack(label_lie_algebras)
+    return label
+
+
+def lie_algebras_to_pose(pred_lie_algebras, num_joints, chains_idx):
+    """
+    arrange lie algebras and forward kinematics to pose
+    """
+    lie_algebras = np.zeros([num_joints, 6])
+    i = 0
+    for idx, chain in enumerate(chains_idx):
+        if idx == 0:
+            lie_algebras[chain, 3:6] = pred_lie_algebras[0:3]
+            i += 3
+        else:
+            n = 4 * len(chain)
+            lie_algebras[chain, 0:4] = pred_lie_algebras[i:i + n].reshape([-1, 4])
+            i += n
+    pose, lie_group = forward_kinematics(lie_algebras, chains_idx)
+    return pose, lie_group
 
 
 """=================hand pose related functions=================="""
@@ -195,7 +232,8 @@ def plot_cropped_3d_annotated_hand(xyz_pose, bbx, cropped_points, view=None):
         ax = plt.axes(xlim=(x_min, x_max), ylim=(z_min, z_max), zlim=(y_min, y_max), projection='3d')
     ax.scatter(cropped_points[:, 0], cropped_points[:, 2], cropped_points[:, 1], color='b', marker='.', s=1,
                alpha=0.5)
-    ax.scatter(xyz_pose[:, 0], xyz_pose[:, 2], xyz_pose[:, 1], color='r', marker='o', s=20)
+    if xyz_pose is not None:
+        ax.scatter(xyz_pose[:, 0], xyz_pose[:, 2], xyz_pose[:, 1], color='r', marker='o', s=20)
     if view is not None:
         ax.view_init(elev=view[0], azim=view[1])
     ax.set_xlabel('x')
@@ -250,4 +288,17 @@ def xyz2uvd(xyz, camera_cfg):
     # perspective projection function
     uvd = [_pro(pt3, camera_cfg) for pt3 in xyz]
     return np.array(uvd)
+
+
+def transfer_pose(pred_pose, rotated_bbx, coeff, predefined_bbx, pose_bbx):
+    x_min, x_max, y_min, y_max, z_min, z_max = rotated_bbx
+    predefined_bbx = np.asarray([predefined_bbx])
+    point1 = np.array([[x_min, y_min, z_min]])
+    point2 = np.array([[x_max, y_max, z_max]])
+    resize_ratio = predefined_bbx / (point2 - point1)
+    rotated_pose = pred_pose / resize_ratio + point1
+
+    x_min, x_max, y_min, y_max, z_min, z_max = pose_bbx
+    xyz_pose = np.dot(rotated_pose, coeff.T) + np.array([[x_min, y_min, z_min]])
+    return xyz_pose
 

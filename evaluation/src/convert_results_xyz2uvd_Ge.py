@@ -44,7 +44,7 @@ def get_positions_from_mat(in_file, dataset):
         pred_xyz = data['joint_est_wld_xyz']
     elif dataset == 'msra':
         pred_xyz = np.asarray(data['P0_xyz_estimation'])
-        for test_id in xrange(1, 9):
+        for test_id in range(1, 9):
             pred_xyz_test_id = np.asarray(data['P{}_xyz_estimation'.format(test_id)])
             #print pred_xyz_test_id.shape
             pred_xyz = np.concatenate((pred_xyz, pred_xyz_test_id), axis=0)

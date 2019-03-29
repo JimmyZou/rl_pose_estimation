@@ -1,31 +1,31 @@
 import numpy as np
 import utils
 import copy
+import multiprocessing
 
 
-class HandEnv(object):
-    def __init__(self, dataset, subset, max_iters, predefined_bbx):
+class HandEnvOld(object):
+    def __init__(self, dataset, subset, max_iters, predefined_bbx, pretrained_model):
+        self.pretrained_model = pretrained_model
         self.dataset = dataset
         assert subset in ["training", "testing"]
         self.subset = subset  # ["training", "testing"]
         self.predefined_bbx = (predefined_bbx[0] + 1, predefined_bbx[1] + 1, predefined_bbx[2] + 1)
-        self.home_pose, self.chains_idx, self.root_idx = self.init_home_pose()
+        self.initial_pose, self.chains_idx, self.root_idx = self.init_home_pose()
         # the first element is the iterations for root joint, second for chain joints
         self.num_chains = len(self.chains_idx)
-        self.num_joint = self.home_pose.shape[0]
+        self.num_joint = self.initial_pose.shape[0]
         self.max_iters = max_iters
         self.current_iter = 0
         self.resize_ratio = np.array([[1., 1., 1.]])
 
         # data of an example
-        self.pose = copy.copy(self.home_pose)
+        self.pose = copy.copy(self.initial_pose)
         self.filename = None
         self.orig_pose = None
-        self.depth_img = None
         self.orig_bbx = None
         self.rotate_mat = None
         self.norm_target_pose = None
-        self.norm_points = None
         self.norm_bbx = None
         self.volume = None
         self.history_pose = []
@@ -119,14 +119,13 @@ class HandEnv(object):
         #           normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
         self.filename = example[0]
         self.orig_pose = example[1]  # xyz_pose
-        self.depth_img = example[2]  # depth_img
         self.orig_bbx = example[3]  # pose_bbx
         self.rotate_mat = example[5]  # coeff
         self.norm_target_pose = example[6]
-        self.norm_points = example[7]
         self.norm_bbx = example[8]
         self.volume = example[9]
-        self.pose = copy.copy(self.home_pose)
+        # TODO: get intial pose using pretrain model
+        self.pose = copy.copy(self.initial_pose)
         self.history_pose.clear()
         self.history_pose.append(self.pose)
         # resize ratio
@@ -151,31 +150,14 @@ class HandEnv(object):
         return obs.astype(np.int8), self.pose
 
     def adjust_pose(self, ac_flat):
-        ac = np.reshape(ac_flat, [-1, 6])
-        # adjust each joint
-        pose = np.concatenate([self.pose, np.ones([self.num_joint, 1])], axis=1)
-        for idx, chain in enumerate(self.chains_idx):
-            for i, curr_joint_idx in enumerate(chain):
-                joint_ac = ac[curr_joint_idx, :]
-                se_mat = utils.lietomatrix(joint_ac[0:3], joint_ac[3:6])
-
-                root_coor = copy.copy(pose[curr_joint_idx, :])
-                root_coor[3] = 0
-                if curr_joint_idx == self.root_idx:
-                    # root joint
-                    tmp = pose - root_coor
-                    pose = np.matmul(se_mat, tmp.T).T + root_coor
-                else:
-                    # chain joints
-                    subseq_joints_idx = chain[i:]
-                    tmp = pose[subseq_joints_idx, :] - root_coor
-                    pose[subseq_joints_idx, :] = np.matmul(se_mat, tmp.T).T + root_coor
+        # TODO: adjust pose
 
         # clip pose by predefined_bbx
-        final_pose = np.clip(pose[:, 0:3], np.array([[0, 0, 0]]), np.array([[self.predefined_bbx[0] - 1,
-                                                                             self.predefined_bbx[1] - 1,
-                                                                             self.predefined_bbx[2] - 1]]))
-        return final_pose
+        # final_pose = np.clip(pose[:, 0:3], np.array([[0, 0, 0]]), np.array([[self.predefined_bbx[0] - 1,
+        #                                                                      self.predefined_bbx[1] - 1,
+        #                                                                      self.predefined_bbx[2] - 1]]))
+        # return final_pose
+        return 0
 
     def step(self, ac):
         is_done = False
@@ -183,8 +165,6 @@ class HandEnv(object):
         if self.current_iter > self.max_iters:
             is_done = True
 
-        # ac has the shape [N_joints, 6]
-        assert ac.shape[0] == self.num_joint * 6
         self.pose = self.adjust_pose(ac)
         self.history_pose.append(self.pose)
 
@@ -238,6 +218,127 @@ class HandEnv(object):
         return pose
 
 
+class HandEnv(object):
+    def __init__(self, dataset, subset, max_iters, predefined_bbx, pretrained_model):
+        self.pretrained_model = pretrained_model
+        self.dataset = dataset
+        assert subset in ["training", "testing"]
+        self.subset = subset  # ["training", "testing"]
+        self.predefined_bbx = (predefined_bbx[0] + 1, predefined_bbx[1] + 1, predefined_bbx[2] + 1)
+        self.chains_idx, self.root_idx, self.num_joint = self.dataset_info()
+        # the first element is the iterations for root joint, second for chain joints
+        self.num_chains = len(self.chains_idx)
+        self.max_iters = max_iters
+        self.current_iter = 0
+        self.resize_ratio = np.array([[1., 1., 1.]])
+
+        # data of mini-batch examples
+        self.n = None
+        self.pose = None
+        self.filename = None
+        self.orig_pose = None
+        self.orig_bbx = None
+        self.rotate_mat = None
+        self.norm_target_pose = None
+        self.norm_bbx = None
+        self.volume = None
+        self.history_pose = []
+        self.lie_group = None
+        self.dis2targ = []
+
+    def dataset_info(self):
+        if self.dataset == 'nyu':
+            root_idx = 13
+            chains_idx = [[13], [12], [11], [10, 9, 8], [7, 6], [5, 4], [3, 2], [1, 0]]
+            num_joint = 14
+        elif self.dataset == 'mrsa15':
+            root_idx = 0
+            chains_idx = [[0], [17, 18, 19, 20], [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
+            num_joint = 21
+        elif self.dataset == 'icvl':
+            root_idx = 0
+            chains_idx = [[0], [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15]]
+            num_joint = 16
+        else:
+            raise ValueError('Unknown dataset %s' % self.dataset)
+        return chains_idx, root_idx, num_joint
+
+    def reset(self, examples, sess, num_cpus=32):
+        """
+        load a mini-batch of examples (list of tuples)
+        example: (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
+                  normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+        """
+        # current iteration
+        self.current_iter = 0
+        self.history_pose.clear()
+        # initial batch examples
+        self.n = len(examples)
+        self.filename, orig_pose, _, self.orig_bbx, _, rotate_mat, \
+            norm_target_pose, _, self.norm_bbx, volume = zip(*examples)
+        self.orig_pose = np.stack(orig_pose, axis=0)
+        self.rotate_mat = np.stack(rotate_mat, axis=0)
+        self.norm_target_pose = np.stack(norm_target_pose, axis=0)
+        # get initial pose using pretrained model and resize_ratio
+        self.volume = np.transpose(np.expand_dims(np.stack(volume, axis=0), axis=4), [0, 3, 2, 1, 4])  # NDHWC
+        init_lie_algebra = sess.run(self.pretrained_model.ac,  # [N, ac_dims]
+                                    feed_dict={self.pretrained_model.obs: self.volume,
+                                               self.pretrained_model.dropout_prob: 1.0})
+        results = []
+        pool = multiprocessing.Pool(num_cpus)
+        for i in range(self.n):
+            results.append(pool.apply_async(self.arrange_batch_examples,
+                                            (i, init_lie_algebra[i, :], self.num_joint, self.chains_idx,
+                                             self.norm_bbx[i], self.predefined_bbx, )))
+        pool.close()
+        pool.join()
+        pool.terminate()
+        for result in results:
+            idx, pose, lie_group, resize_ratio = result.get()
+
+    def get_obs(self):
+        # transpose from NWHDC to NDHWC
+        # TODO: in env... state = np.transpose(state, [0, 3, 2, 1, 4])
+        # return state, pose
+        pass
+
+    def step(self, acs):
+        pass
+
+    @staticmethod
+    def arrange_batch_examples(_idx, lie_algebras, num_joints, chains_idx, norm_bbx, predefined_bbx):
+        # resize ratio
+        x_min, x_max, y_min, y_max, z_min, z_max = norm_bbx
+        predefined_bbx = np.asarray([predefined_bbx])
+        point1 = np.array([[x_min, y_min, z_min]])
+        point2 = np.array([[x_max, y_max, z_max]])
+        _resize_ratio = predefined_bbx / (point2 - point1)
+        _pose, _lie_group = utils.lie_algebras_to_pose(lie_algebras, num_joints, chains_idx)
+        return _idx, _pose, _lie_group, _resize_ratio
+
+    @staticmethod
+    def mean_avg_p(joints_error, threshold=80):
+        thresholds = np.arange(1, threshold + 1)[np.newaxis, :]
+        errors = np.repeat(joints_error[:, np.newaxis], threshold, axis=1)
+        mean_ap = np.mean(errors <= thresholds) - 0.5
+        return mean_ap
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def in_test():
     # from data_preprocessing.mrsa_dataset import MRSADataset
     # reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
@@ -259,28 +360,6 @@ def in_test():
     # example = reader.convert_to_example(reader._annotations[150])
     # env = HandEnv(dataset='icvl', subset='training', max_iters=10, predefined_bbx=reader.predefined_bbx)
     # env.reset(example)
-
-    # obs, pose = env.get_obs()
-    # reader.plot_skeleton(env.norm_points, env.home_pose)
-    #
-    # reader.plot_skeleton(env.norm_points, env.norm_target_pose)
-    #
-    # reader.plot_skeleton(None, env.pose)
-    #
-    # ac = np.zeros([env.num_joint, 6])
-    # ac[13, :] = np.array([0, 0, 0, 10, 0, 0])
-    # ac[10, :] = np.array([0, 0, np.pi / 2, 10, 0, 0])
-    # ac[9, :] = np.array([0, 0, np.pi / 2, 10, 0, 0])
-    # ac[8, :] = np.array([0, 0, np.pi / 2, 10, 0, 0])
-    # r = env.step(ac)
-    # print(r)
-    # reader.plot_skeleton(None, env.pose)
-
-    print(env.home_pose)
-    a = env.pose_to_lie_algebras(env.home_pose)
-    b = env.lie_algebras_to_pose(a, reader.jnt_num)
-    print(b)
-
     pass
 
 

@@ -1,11 +1,11 @@
 import sys
 sys.path.append('..')
-from model1.ac_model import Actor, Critic
+from unmaintained.ac_model import Actor, Critic
 from data_preprocessing.nyu_dataset import NYUDataset
 from data_preprocessing.icvl_dataset import ICVLDataset
 from data_preprocessing.mrsa_dataset import MRSADataset
-from model1.environment import HandEnv
-from model1.sampler import Sampler
+from unmaintained.environment import HandEnv
+from unmaintained.sampler import Sampler
 import os
 import tensorflow as tf
 import utils
@@ -103,7 +103,7 @@ def get_config():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
-    parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/model1/')
+    parser.add_argument('--saved_model_path', '-smp', type=str, default='../results/unmaintained/')
     parser.add_argument('--actor_model_name', '-amn', type=str, default='actor')
     parser.add_argument('--critic_model_name', '-cmn', type=str, default='critic')
     parser.add_argument('--batch_size', '-bs', type=int, default=128)

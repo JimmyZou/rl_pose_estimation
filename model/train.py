@@ -3,9 +3,9 @@ sys.path.append('..')
 from data_preprocessing.nyu_dataset import NYUDataset
 from data_preprocessing.icvl_dataset import ICVLDataset
 from data_preprocessing.mrsa_dataset import MRSADataset
-from model2.environment import HandEnv
-from model2.sampler import ReplayBuffer, Sampler
-from model2.ac_model import Actor, Critic
+from model.environment import HandEnv
+from model.sampler import ReplayBuffer, Sampler
+from model.ac_model import Actor, Critic, Pretrain
 import os
 import tensorflow as tf
 import utils
@@ -16,44 +16,53 @@ import pickle
 
 def train(config):
     if config['dataset'] == 'nyu':
-        dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/', predefined_bbx=(63, 63, 31))
-        # (160, 120, 70), 6 * 14 = 84
+        dataset = NYUDataset(subset='training', root_dir='/hand_pose_data/nyu/', predefined_bbx=(63, 63, 31))
+        ac_dim = 4 * dataset.jnt_num - 1
         actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
-        actor_fc_layer = (512, 512, 128)
+        actor_fc_layer = (512, 512, 256)
         critic_cnn_layer = (8, 16, 32, 64, 128)
-        critic_fc_layer = (512, 84, 512, 128)
+        critic_fc_layer = (512, ac_dim, 512, 128)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
-        # (140, 120, 60), 6 * 16 = 96
+        ac_dim = 4 * dataset.jnt_num - 1
         actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
-        actor_fc_layer = (512, 512, 128)
+        actor_fc_layer = (512, 512, 256)
         critic_cnn_layer = (8, 16, 32, 64, 128)
-        critic_fc_layer = (512, 96, 512, 128)
+        critic_fc_layer = (512, ac_dim, 512, 128)
     elif config['dataset'] == 'mrsa15':
         # (180, 120, 70), 6 * 21 = 126
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
                               root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
+        ac_dim = 4 * dataset.jnt_num - 1
         actor_cnn_layer = (8, 16, 32, 64, 128)  # 512
-        actor_fc_layer = (512, 512, 128)
+        actor_fc_layer = (512, 512, 256)
         critic_cnn_layer = (8, 16, 32, 64, 128)
-        critic_fc_layer = (512, 126, 512, 128)
+        critic_fc_layer = (512, ac_dim, 512, 128)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
+    actor_obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 2)
+    pretrain_obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 1)
 
     actor = Actor(scope='actor',
-                  obs_dims=dataset.predefined_bbx,
-                  ac_dim=6 * dataset.jnt_num,
+                  obs_dims=actor_obs_dims,
+                  ac_dim=ac_dim,
                   cnn_layer=actor_cnn_layer,
                   fc_layer=actor_fc_layer,
                   tau=config['tau'],
                   lr=config['actor_lr'])
     critic = Critic(scope='critic',
-                    obs_dims=dataset.predefined_bbx,
-                    ac_dim=6 * dataset.jnt_num,
+                    obs_dims=actor_obs_dims,
+                    ac_dim=ac_dim,
                     cnn_layer=critic_cnn_layer,
                     fc_layer=critic_fc_layer,
                     tau=config['tau'],
                     lr=config['critic_lr'])
+    pretrain_model = Pretrain(scope='pretrain',
+                                obs_dims=pretrain_obs_dims,
+                                cnn_layer=actor_cnn_layer,
+                                fc_layer=actor_fc_layer,
+                                ac_dim=ac_dim)
+
     env = HandEnv(dataset=config['dataset'],
                   subset='training',
                   max_iters=config['max_iters'],
@@ -67,7 +76,6 @@ def train(config):
         sess.run(tf.global_variables_initializer())
 
         root_dir = config['saved_model_path'] + config['dataset'] + '/'
-        # summary_writer = tf.summary.FileWriter(root_dir)
         # actor model
         save_actor_dir = root_dir + 'actor.pkl'
         if os.path.exists(save_actor_dir):
@@ -169,7 +177,6 @@ def main():
     config = get_config()
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = config['gpu_id']
-    # TODO: pretrain and inverse lie parameters
     train(config)
 
 

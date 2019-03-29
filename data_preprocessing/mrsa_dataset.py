@@ -219,7 +219,7 @@ def in_test():
     #     example = reader.convert_to_example(reader._annotations[i * gap])
     #     print(example[-1].shape, np.sum(example[-1] >= 2))
 
-    # from model2.environment import HandEnv
+    # from model.environment import HandEnv
     # env = HandEnv(dataset='mrsa15',
     #               subset='training',
     #               max_iters=5,
@@ -230,11 +230,18 @@ def in_test():
     #         label_lie_algebra, warning = env.pose_to_lie_algebras(example[6])
     #         print(label_lie_algebra)
 
-    reader.store_multi_processors(reader.store_dir)
+    # reader.store_multi_processors(reader.store_dir)
 
-    # a = reader.get_batch_samples_training(3)
-    # for data in reader.get_samples_testing():
-    #     print(len(data))
+    # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
+    #                       coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+    # import utils
+    # example = reader.convert_to_example(reader._annotations[0])
+    # print(example[0])
+    # # utils.transfer_pose(pred_pose, rotated_bbx, coeff, predefined_bbx, pose_bbx)
+    # raw_pose = utils.transfer_pose(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # print(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # a = raw_pose * np.array([[1.0, -1.0, -1.0]])
+    # print(a)
 
 
 if __name__ == '__main__':

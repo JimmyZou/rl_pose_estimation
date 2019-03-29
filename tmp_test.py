@@ -73,7 +73,7 @@
 #     return joint_xyz_f
 #
 #
-# from model2.environment import HandEnv
+# from model.environment import HandEnv
 # from data_preprocessing.nyu_dataset import NYUDataset
 # dataset = NYUDataset(subset='training', root_dir='/home/data/nyu/', predefined_bbx=(63, 63, 31))
 # env = HandEnv(dataset='nyu',
@@ -81,7 +81,7 @@
 #               max_iters=5,
 #               predefined_bbx=dataset.predefined_bbx)
 
-# from model2.environment import HandEnv
+# from model.environment import HandEnv
 # from data_preprocessing.mrsa_dataset import MRSADataset
 # dataset = MRSADataset(subset='training', test_fold='P0',
 #                       root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
@@ -90,7 +90,7 @@
 #               max_iters=5,
 #               predefined_bbx=dataset.predefined_bbx)
 
-# from model2.environment import HandEnv
+# from model.environment import HandEnv
 # from data_preprocessing.icvl_dataset import ICVLDataset
 # dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
 # env = HandEnv(dataset='icvl',
@@ -118,7 +118,10 @@ for file_name in files:
             data = pickle.load(f)
         revised_data = []
         for example in data:
-            revised_data.append((0, 0, 0, 0, 0, 0, example[6], 0, 0, example[9]))
+            # example(filename, xyz_pose, depth_img, pose_bbx, cropped_point,
+            #         coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+            revised_data.append((example[0], example[1], 0, example[3], 0, example[5],
+                                 example[6], 0, example[8], example[9]))
 
         store_dir = file.replace('/home/data/nyu/', '/hand_pose_data/nyu/')
         with open(store_dir, 'wb') as f:

@@ -93,10 +93,10 @@ class ICVLDataset(BaseDataset):
         # show depth image
         # jnt_uvd = utils.xyz2uvd(pose.reshape([-1, 3]), self.camera_cfg)
         # utils.plot_annotated_depth_img(depth_img, jnt_uvd)
+        # utils.plot_annotated_depth_img(depth_img, None)
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
-
 
         # utils.plot_cropped_3d_annotated_hand(example[1], example[3], example[4])
 
@@ -105,6 +105,8 @@ class ICVLDataset(BaseDataset):
         preprocessed_example = self.consistent_orientation(example, self.predefined_bbx)
 
         # import utils
+        # utils.plot_cropped_3d_annotated_hand(None, None, preprocessed_example[7])
+
         # utils.plot_cropped_3d_annotated_hand(preprocessed_example[6], None, preprocessed_example[7])
         # self.plot_skeleton(preprocessed_example[7], preprocessed_example[6])
         return preprocessed_example
@@ -141,8 +143,8 @@ class ICVLDataset(BaseDataset):
 
 
 def in_test():
-    reader = ICVLDataset(subset='pps-training', num_cpu=10, num_imgs_per_file=600, predefined_bbx=(63, 63, 31))
-    # reader = ICVLDataset(subset='pps-testing', num_cpu=3, num_imgs_per_file=600, predefined_bbx=(63, 63, 31))
+    # reader = ICVLDataset(subset='pps-training', num_cpu=10, num_imgs_per_file=600, predefined_bbx=(64, 64, 32))
+    reader = ICVLDataset(subset='pps-testing', num_cpu=3, num_imgs_per_file=600, predefined_bbx=(63, 63, 31))
     reader.load_annotation()
     # for i in range(20):
     #     gap = 101
@@ -150,20 +152,23 @@ def in_test():
     #     example = reader.convert_to_example(reader._annotations[i * gap])
     #     print(example[-1].shape)
 
-    for ann in reader._annotations:
-        if '201406191044/image_7438.png' in ann[0] or '201406191044/image_6936.png' in ann[0]:
-            example = reader.convert_to_example(ann)
-            print(example[9].shape)
-            # try:
-            #     example = reader.convert_to_example(ann)
-            # except:
-            #     print('error...%s', ann[0])
+    # for ann in reader._annotations:
+    #     if '201406191044/image_7438.png' in ann[0] or '201406191044/image_6936.png' in ann[0]:
+    #         example = reader.convert_to_example(ann)
+    #         print(example[9].shape)
 
     # reader.store_multi_processors(reader.store_dir)
 
-    # a = reader.get_batch_samples_training(3)
-    # for data in reader.get_samples_testing():
-    #     print(len(data))
+    # preprocessed_example (filename, xyz_pose, depth_img, pose_bbx, cropped_point,
+    #                       coeff, normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+    # example = reader.convert_to_example(reader._annotations[600])
+    # print(example[0])
+    # # utils.transfer_pose(pred_pose, rotated_bbx, coeff, predefined_bbx, pose_bbx)
+    # raw_pose = utils.transfer_pose(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # print(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # a = utils.xyz2uvd(raw_pose.reshape([-1]), reader.camera_cfg)
+    # print(a)
+
 
 
 if __name__ == '__main__':

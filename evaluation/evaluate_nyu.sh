@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 python src/compute_error.py nyu max-frame\
     DeepPrior   results/nyu/CVWW15_NYU_Prior.txt\
     DeepPrior-Refine   results/nyu/CVWW15_NYU_Prior-Refinement.txt\

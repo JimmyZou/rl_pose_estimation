@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 python src/compute_error.py icvl max-frame\
     DeepModel   results/icvl/IJCAI16_ICVL_DeepModel.txt\
     LRF         results/icvl/CVPR14_LRF_Results.txt\
@@ -10,5 +11,7 @@ python src/compute_error.py icvl max-frame\
 	SHPR-Net	results/icvl/Access18_ICVL_SHPR_Net.txt\
 	HandPointNet	results/icvl/CVPR18_ICVL_HandPointNet.txt\
 	Point-to-Point	results/icvl/ECCV18_ICVL_Point-to-Point.txt\
+	#RL-pose results/icvl/icvl_pretrain_rl_pose_estimation.txt\
     #DeepPrior   results/icvl/CVWW15_ICVL_Prior.txt\
     #DeepPrior-Refine   results/nyu/CVWW15_ICVL_Prior-Refinement.txt\
+

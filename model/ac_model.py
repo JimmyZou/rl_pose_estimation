@@ -43,26 +43,6 @@ class Pretrain(object):
             ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                    activation_fn=None, scope='last_fc')
 
-            # fc_out1 = tf.contrib.layers.dropout(
-            #     tf.contrib.layers.fully_connected(inputs=fc_out,
-            #                                       num_outputs=self.fc_layer[0],
-            #                                       activation_fn=tf.nn.elu,
-            #                                       scope='fc1'), keep_prob=dropout_prob)
-            # fc_out2 = fc_out + tf.contrib.layers.dropout(
-            #     tf.contrib.layers.fully_connected(inputs=fc_out1,
-            #                                       num_outputs=self.fc_layer[1],
-            #                                       activation_fn=tf.nn.elu,
-            #                                       scope='fc2'), keep_prob=dropout_prob)
-            #
-            # fc_out3 = tf.contrib.layers.dropout(
-            #     tf.contrib.layers.fully_connected(inputs=fc_out2,
-            #                                       num_outputs=self.fc_layer[2],
-            #                                       activation_fn=tf.nn.elu,
-            #                                       scope='fc3'), keep_prob=dropout_prob)
-            #
-            # ac = tf.contrib.layers.fully_connected(inputs=fc_out3, num_outputs=self.ac_dim,
-            #                                        activation_fn=None, scope='last_fc')
-
         return obs, ac, dropout_prob
 
     def get_trainable_variables(self):
@@ -84,7 +64,7 @@ def get_target_updates(_vars, target_vars, tau):
 class Actor(object):
     def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
         # obs_width: W, H, D, C; change to D, H, W, C
-        self.obs_dims = (obs_dims[2] + 1, obs_dims[1] + 1, obs_dims[0] + 1, 2)
+        self.obs_dims = obs_dims
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
         self.ac_dim = ac_dim
@@ -169,7 +149,7 @@ class Actor(object):
 class Critic(object):
     def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
         # obs_width: W, H, D, C; change to D, H, W, C
-        self.obs_dims = (obs_dims[2] + 1, obs_dims[1] + 1, obs_dims[0] + 1, 2)
+        self.obs_dims = obs_dims
         self.fc_layer = fc_layer
         self.cnn_layer = cnn_layer
         self.ac_dim = ac_dim
@@ -260,46 +240,6 @@ class Critic(object):
 
 
 def in_test():
-    import numpy as np
-    from data_preprocessing.icvl_dataset import ICVLDataset
-    dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/')
-    # (140, 120, 60), 6 * 16 = 96
-    actor_cnn_layer = (4, 8, 16, 32, 64)
-    actor_fc_layer = (512, 512, 256)
-    critic_cnn_layer = (4, 8, 16, 32, 64)  # 768
-    critic_fc_layer = (512, 96, 512, 128)
-
-    actor = Actor(scope='actor',
-                  obs_dims=dataset.predefined_bbx,
-                  ac_dim=6 * dataset.jnt_num,
-                  cnn_layer=actor_cnn_layer,
-                  fc_layer=actor_fc_layer)
-    tf_config = tf.ConfigProto()
-    tf_config.gpu_options.allow_growth = True
-    with tf.Session(config=tf_config) as sess:
-        actor.load_sess(sess)
-        sess.run(tf.global_variables_initializer())
-        sess.run(actor.update_target_ops)
-
-        obs = np.zeros((2,) + actor.obs_dims)
-        obs[0, 0, 0, 0, 0] = 1
-        q_gradient_input = np.zeros([2, 6 * dataset.jnt_num]) + 0.1
-        _, loss = actor.train(q_gradient_input, obs)
-        print(loss)
-
-    # critic = Critic('critic_root', tau=1)
-    # with tf.Session() as sess:
-    #     critic.load_sess(sess)
-    #     sess.run(tf.global_variables_initializer())
-    #     sess.run(critic.update_target_ops)
-    #
-    #     obs = np.zeros((2,) + critic.obs_dims + (1,))
-    #     obs[0, 0, 0, 0, 0] = 1
-    #     next_obs = obs + 0.1
-    #     ac = np.array([[1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2]])
-    #     next_ac = ac + 0.1
-    #     critic.train(obs, ac, next_obs, next_ac, np.array([[0.1]]), np.array([[0.9]]))
-
     pass
 
 

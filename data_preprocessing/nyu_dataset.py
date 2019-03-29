@@ -49,8 +49,8 @@ class NYUDataset(BaseDataset):
         # load joint_data.mat in either train or test fold.
         _dir = os.path.join(self.src_dir, 'joint_data.mat')
         joint_data = loadmat(_dir)
-        # print('%i joints names:' % self.jnt_num, joint_data['joint_names'])
-        camera_num = 1 if self.subset == 'testing' else 3
+        # camera_num = 1 if self.subset == 'pps-testing' else 3
+        camera_num = 1
         joints = [joint_data['joint_xyz'][idx] for idx in range(camera_num)]
         filenames = [
             ['depth_{}_{:07d}.png'.format(camera_idx + 1, idx + 1) for idx in range(joints[camera_idx].shape[0])]
@@ -83,8 +83,9 @@ class NYUDataset(BaseDataset):
         depth_img = self._decode_png(img_data)
 
         # show joints on uvd depth image
-        # jnt_uvd = utils.xyz2uvd(label.pose, self.camera_cfg)
-        # utils.plot_annotated_depth_img(depth_img, jnt_uvd, self.camera_cfg, self.max_depth)
+        # import utils
+        # jnt_uvd = utils.xyz2uvd(pose, self.camera_cfg)
+        # utils.plot_annotated_depth_img(depth_img, jnt_uvd)
 
         # tuple (filename, xyz_pose, depth_img, bbox, cropped_points)
         example = self.crop_from_xyz_pose(filename, depth_img, pose)
@@ -130,21 +131,32 @@ class NYUDataset(BaseDataset):
 
 
 def in_test():
-    # reader = NYUDataset(subset='pps-training', num_cpu=15, num_imgs_per_file=600)
-    reader = NYUDataset(subset='pps-testing', num_cpu=15, num_imgs_per_file=600)
+    # reader = NYUDataset(subset='pps-training', num_cpu=30, num_imgs_per_file=600, root_dir="/home/data/nyu/")
+    reader = NYUDataset(subset='pps-testing', num_cpu=30, num_imgs_per_file=600, root_dir="/home/data/nyu/")
     reader.load_annotation()
+
     # for i in range(5):
     #     gap = 250
     #     print(reader._annotations[i * gap][0])
     #     example = reader.convert_to_example(reader._annotations[i * gap])
     #     print(example[-1].shape)
 
-    # reader.store_preprocessed_data_per_file(reader._annotations[0:5], 1, reader.store_dir)
     reader.store_multi_processors(reader.store_dir)
 
     # a = reader.get_batch_samples_training(3)
     # for data in reader.get_samples_testing():
     #     print(len(data))
+
+    # example = reader.convert_to_example(reader._annotations[0])
+
+    # import utils
+    # example = reader.convert_to_example(reader._annotations[0])
+    # print(example[0])
+    # # utils.transfer_pose(pred_pose, rotated_bbx, coeff, predefined_bbx, pose_bbx)
+    # raw_pose = utils.transfer_pose(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # print(example[6], example[8], example[5], reader.predefined_bbx, example[3])
+    # a = raw_pose * np.array([[1.0, -1.0, 1.0]])
+    # print(a)
 
 
 if __name__ == '__main__':
