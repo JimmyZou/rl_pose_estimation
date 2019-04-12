@@ -124,7 +124,6 @@ class HandEnvOld(object):
         self.norm_target_pose = example[6]
         self.norm_bbx = example[8]
         self.volume = example[9]
-        # TODO: get intial pose using pretrain model
         self.pose = copy.copy(self.initial_pose)
         self.history_pose.clear()
         self.history_pose.append(self.pose)
@@ -219,32 +218,37 @@ class HandEnvOld(object):
 
 
 class HandEnv(object):
-    def __init__(self, dataset, subset, max_iters, predefined_bbx, pretrained_model):
+    def __init__(self, dataset_name, subset, max_iters, predefined_bbx, pretrained_model,
+                 reward_range=2, num_cpus=10):
         self.pretrained_model = pretrained_model
-        self.dataset = dataset
+        self.num_cpus = num_cpus
+        self.reward_range = reward_range
+        self.dataset = dataset_name
         assert subset in ["training", "testing"]
         self.subset = subset  # ["training", "testing"]
-        self.predefined_bbx = (predefined_bbx[0] + 1, predefined_bbx[1] + 1, predefined_bbx[2] + 1)
-        self.chains_idx, self.root_idx, self.num_joint = self.dataset_info()
+        self.predefined_bbx = predefined_bbx
+        self.chains_idx, self.root_idx, self.num_joints = self.dataset_info()
         # the first element is the iterations for root joint, second for chain joints
         self.num_chains = len(self.chains_idx)
         self.max_iters = max_iters
         self.current_iter = 0
-        self.resize_ratio = np.array([[1., 1., 1.]])
+        self.current_pose = None  # array [N, num_joint, 3]
 
         # data of mini-batch examples
-        self.n = None
-        self.pose = None
-        self.filename = None
-        self.orig_pose = None
-        self.orig_bbx = None
-        self.rotate_mat = None
-        self.norm_target_pose = None
-        self.norm_bbx = None
-        self.volume = None
+        self.batch_size = None  # int
+        self.filename = None  # list
+        self.xyz_pose = None  # array [N, num_joint, 3]
+        self.orig_bbx = None  # array [N, 6]
+        self.coeff = None  # array [N, 3, 3]
+        self.rotated_target_pose = None  # array [N, num_joint, 3]
+        self.rotated_bbx = None  # array [N, 6]
+        self.volume = None  # array NDHWC
+        self.init_pose = None  # array [N, num_joint, 3]
+        self.resize_ratio = None  # array [N, 3]
         self.history_pose = []
-        self.lie_group = None
-        self.dis2targ = []
+        self.lie_groups = {}  # dict of lie groups for batch-size samples
+        self.init_max_error = {}  # dict of scalar
+        self.root_coordinates = None
 
     def dataset_info(self):
         if self.dataset == 'nyu':
@@ -263,103 +267,229 @@ class HandEnv(object):
             raise ValueError('Unknown dataset %s' % self.dataset)
         return chains_idx, root_idx, num_joint
 
-    def reset(self, examples, sess, num_cpus=32):
+    def reset(self, examples, sess):
         """
         load a mini-batch of examples (list of tuples)
         example: (filename, xyz_pose, depth_img, pose_bbx, cropped_points, coeff,
                   normalized_rotate_pose, normalized_rotate_points, rotated_bbx, volume)
+        sess: get initial pose using pretrained model
         """
-        # current iteration
+        # reset environment setting
         self.current_iter = 0
         self.history_pose.clear()
+        self.lie_groups.clear()
+        self.init_max_error.clear()
+
         # initial batch examples
-        self.n = len(examples)
-        self.filename, orig_pose, _, self.orig_bbx, _, rotate_mat, \
-            norm_target_pose, _, self.norm_bbx, volume = zip(*examples)
-        self.orig_pose = np.stack(orig_pose, axis=0)
-        self.rotate_mat = np.stack(rotate_mat, axis=0)
-        self.norm_target_pose = np.stack(norm_target_pose, axis=0)
-        # get initial pose using pretrained model and resize_ratio
+        self.batch_size = len(examples)
+        self.filename, xyz_pose, _, orig_bbx, _, coeff, \
+            rotated_target_pose, _, rotated_bbx, volume = zip(*examples)
+
+        # convert to arrays [batch_size, ...]
+        self.xyz_pose = np.stack(xyz_pose, axis=0)
+        self.orig_bbx = np.stack(orig_bbx, axis=0)
+        self.coeff = np.stack(coeff, axis=0)
+        self.rotated_target_pose = np.stack(rotated_target_pose, axis=0)
+        self.rotated_bbx = np.stack(rotated_bbx, axis=0)
         self.volume = np.transpose(np.expand_dims(np.stack(volume, axis=0), axis=4), [0, 3, 2, 1, 4])  # NDHWC
-        init_lie_algebra = sess.run(self.pretrained_model.ac,  # [N, ac_dims]
-                                    feed_dict={self.pretrained_model.obs: self.volume,
-                                               self.pretrained_model.dropout_prob: 1.0})
+        self.init_pose = sess.run(self.pretrained_model.ac,  # [N, ac_dims]
+                                  feed_dict={self.pretrained_model.obs: self.volume,
+                                             self.pretrained_model.dropout_prob: 1.0}).reshape([self.batch_size, -1, 3])
+        self.root_coordinates = self.init_pose[:, self.root_idx, :]
+        self.history_pose.append(self.init_pose)
+        self.current_pose = self.init_pose.copy()
+
+        # # debug
+        # results = []
+        # for i in range(self.batch_size):
+        #     results.append(self.arrange_initial_batch_examples(i, self.init_pose[i, :], self.num_joints,
+        #                                                        self.chains_idx, self.rotated_bbx[i, :],
+        #                                                        self.predefined_bbx,
+        #                                                        self.rotated_target_pose[i, :, :]))
+        # self.resize_ratio = np.zeros([self.batch_size, 3])  # [N, 3]
+        # for result in results:
+        #     idx, resize_ratio, lie_group, max_error = result
+        #     self.resize_ratio[idx, :] = resize_ratio
+        #     self.lie_groups[idx] = lie_group
+        #     self.init_max_error[idx] = max_error
+        # print('Loaded %i samples...' % self.batch_size)
+        # # debug
+
         results = []
-        pool = multiprocessing.Pool(num_cpus)
-        for i in range(self.n):
-            results.append(pool.apply_async(self.arrange_batch_examples,
-                                            (i, init_lie_algebra[i, :], self.num_joint, self.chains_idx,
-                                             self.norm_bbx[i], self.predefined_bbx, )))
+        pool = multiprocessing.Pool(self.num_cpus)
+        for i in range(self.batch_size):
+            results.append(pool.apply_async(self.arrange_initial_batch_examples,
+                                            (i, self.init_pose[i, :], self.num_joints, self.chains_idx,
+                                             self.rotated_bbx[i, :], self.predefined_bbx,
+                                             self.rotated_target_pose[i, :, :])))
         pool.close()
         pool.join()
-        pool.terminate()
+        self.resize_ratio = np.zeros([self.batch_size, 3])  # [N, 3]
         for result in results:
-            idx, pose, lie_group, resize_ratio = result.get()
+            idx, resize_ratio, lie_group, max_error = result.get()
+            self.resize_ratio[idx, :] = resize_ratio
+            self.lie_groups[idx] = lie_group
+            self.init_max_error[idx] = max_error
+        print('Loaded %i samples...' % self.batch_size)
 
     def get_obs(self):
-        # transpose from NWHDC to NDHWC
-        # TODO: in env... state = np.transpose(state, [0, 3, 2, 1, 4])
-        # return state, pose
-        pass
+        """
+        inputs:
+            volume: [N, D, H, W, C=1]
+            pose: [N, n_joints, 3]
+        returns:
+            obs: [N, D, H, W, C=2]
+        """
+        # convert pose coordinate to volume
+        results = []
+        pool = multiprocessing.Pool(self.num_cpus)
+        for i in range(self.batch_size):
+            results.append(pool.apply_async(self.get_pose_volume,
+                                            (i, self.current_pose[i, :, :], self.predefined_bbx)))
+        pool.close()
+        pool.join()
+        pose_volume_list, i = [], 0
+        for result in results:
+            idx, pose_volume = result.get()
+            assert i == idx
+            i += 1
+            pose_volume_list.append(pose_volume)
+        pose_volume = np.stack(pose_volume_list, axis=0)  # [NDHWC]
+        obs = np.concatenate([self.volume, pose_volume], axis=4)
+        return obs, self.current_pose
 
     def step(self, acs):
-        pass
+        """
+        inputs:
+            acs: [N, ac_dims]
+        returns:
+            r, is_done
+        """
+        is_done = False
+        self.current_iter += 1
+        if self.current_iter > self.max_iters:
+            is_done = True
+
+        # # debug
+        # results = []
+        # for i in range(self.batch_size):
+        #     results.append(self.iterative_pose_adjust(i, self.lie_groups[i], acs[i, :], self.num_joints,
+        #                                               self.chains_idx, self.root_coordinates[i, :],
+        #                                               self.rotated_target_pose[i, :, :], self.init_max_error[i]))
+        # rs = np.zeros([self.batch_size, 1])
+        # for result in results:
+        #     batch_idx, new_lie_group, new_pose, reward = result
+        #     assert len(new_lie_group) == (len(self.chains_idx)-1)
+        #     self.lie_groups[batch_idx] = new_lie_group
+        #     self.current_pose[batch_idx, :, :] = new_pose
+        #     rs[batch_idx, 0] = reward
+        # self.history_pose.append(self.current_pose)
+        # # debug
+
+        # adjust pose and obatin reward (multi-processing)
+        results = []
+        pool = multiprocessing.Pool(self.num_cpus)
+        for i in range(self.batch_size):
+            results.append(pool.apply_async(self.iterative_pose_adjust,
+                                            (i, self.lie_groups[i], acs[i, :], self.num_joints, self.chains_idx,
+                                             self.root_coordinates[i, :], self.rotated_target_pose[i, :, :],
+                                             self.init_max_error[i])))
+        pool.close()
+        pool.join()
+        rs = np.zeros([self.batch_size, 1])
+        for result in results:
+            batch_idx, new_lie_group, new_pose, reward = result.get()
+            assert len(new_lie_group) == (len(self.chains_idx)-1)
+            self.lie_groups[batch_idx] = new_lie_group
+            self.current_pose[batch_idx, :, :] = new_pose
+            rs[batch_idx, 0] = reward
+        self.history_pose.append(self.current_pose)
+        # clip rewards
+        rs = np.clip(rs, -self.reward_range, self.reward_range)
+        return rs, is_done
 
     @staticmethod
-    def arrange_batch_examples(_idx, lie_algebras, num_joints, chains_idx, norm_bbx, predefined_bbx):
+    def iterative_pose_adjust(batch_idx, prior_lie_group, ac, num_joints, chains_idx,
+                              root_coordinate, target_pose, init_error):
+        """
+        inputs:
+            prior_lie_group: dict of lie groups for each chain
+            ac: lie algebras 4*(num_joints-1)
+        return:
+            new_lie_group
+            new_pose
+            reward
+        """
+        lie_algebras = np.zeros([num_joints, 6])
+        # convert action to lie algebras
+        i = 0
+        for idx, chain in enumerate(chains_idx):
+            if idx is not 0:
+                n = 4 * len(chain)
+                lie_algebras[chain, 0:4] = ac[i:i + n].reshape([-1, 4])
+                i += n
+
+        # forward kinematic
+        new_pose = np.zeros([num_joints, 3])
+        root_idx = chains_idx[0][0]
+        new_pose[root_idx] = root_coordinate
+        new_lie_groups = []
+        for idx, chain in enumerate(chains_idx):
+            if idx is not 0:
+                # append root joint idx
+                chain_idx = [root_idx] + chain
+                joint_coordinates, lie_group = utils.update_lie_groups(prior_lie_group[idx-1],
+                                                                       lie_algebras[chain_idx, :])
+                new_pose[chain_idx[1:], :] = joint_coordinates[1:]
+                new_lie_groups.append(lie_group)
+
+        # reward
+        max_error = np.max(np.linalg.norm(target_pose - new_pose, axis=1))
+        reward = max_error - init_error
+        return batch_idx, new_lie_groups, new_pose, reward
+
+
+    @staticmethod
+    def arrange_initial_batch_examples(_idx, pose, num_joints, chains_idx, norm_bbx, predefined_bbx, target_pose):
         # resize ratio
         x_min, x_max, y_min, y_max, z_min, z_max = norm_bbx
         predefined_bbx = np.asarray([predefined_bbx])
         point1 = np.array([[x_min, y_min, z_min]])
         point2 = np.array([[x_max, y_max, z_max]])
         _resize_ratio = predefined_bbx / (point2 - point1)
-        _pose, _lie_group = utils.lie_algebras_to_pose(lie_algebras, num_joints, chains_idx)
-        return _idx, _pose, _lie_group, _resize_ratio
+
+        # lie group of init pose
+        assert pose.shape == (num_joints, 3)
+        _lie_algebras = utils.inverse_kinematics(pose, chains_idx)
+        joint_xyz_f, _lie_group = utils.forward_kinematics(_lie_algebras, chains_idx)
+        assert len(_lie_group) == (len(chains_idx) - 1)
+
+        # max error in current distance measurement
+        max_error = np.max(np.linalg.norm(target_pose - pose, axis=1))
+        return _idx, _resize_ratio, _lie_group, max_error
 
     @staticmethod
-    def mean_avg_p(joints_error, threshold=80):
-        thresholds = np.arange(1, threshold + 1)[np.newaxis, :]
-        errors = np.repeat(joints_error[:, np.newaxis], threshold, axis=1)
-        mean_ap = np.mean(errors <= thresholds) - 0.5
-        return mean_ap
+    def get_pose_volume(idx, xyz_pose, bbx):
+        x_max, y_max, z_max = bbx
+        # WHD
+        pose_volume = np.zeros([x_max + 1, y_max + 1, z_max + 1], dtype=np.int8)
+        for j in range(xyz_pose.shape[0]):
+            tmp = xyz_pose[j, :].astype(np.int32)
+            joint_coor = (tmp[0], tmp[1], tmp[2])
+            pose_volume[joint_coor] = 4
+        # DHWC
+        pose_volume = np.expand_dims(np.transpose(pose_volume, [2, 1, 0]), axis=3)
+        return idx, pose_volume
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # @staticmethod
+    # def mean_avg_p(joints_error, threshold=80):
+    #     thresholds = np.arange(1, threshold + 1)[np.newaxis, :]
+    #     errors = np.repeat(joints_error[:, np.newaxis], threshold, axis=1)
+    #     mean_ap = np.mean(errors <= thresholds) - 0.5
+    #     return mean_ap
 
 
 def in_test():
-    # from data_preprocessing.mrsa_dataset import MRSADataset
-    # reader = MRSADataset(test_fold='P0', subset='pre-processing', num_cpu=4, num_imgs_per_file=600)
-    # reader.load_annotation()
-    # example = reader.convert_to_example(reader._annotations[10])
-    # env = HandEnv(dataset='mrsa15', subset='training', max_iters=10, predefined_bbx=reader.predefined_bbx)
-    # env.reset(example)
-
-    from data_preprocessing.nyu_dataset import NYUDataset
-    reader = NYUDataset(subset='pps-testing', num_cpu=4, num_imgs_per_file=600)
-    reader.load_annotation()
-    example = reader.convert_to_example(reader._annotations[10])
-    env = HandEnv(dataset='nyu', subset='training', max_iters=10, predefined_bbx=reader.predefined_bbx)
-    env.reset(example)
-
-    # from data_preprocessing.icvl_dataset import ICVLDataset
-    # reader = ICVLDataset(subset='pps-testing',  num_cpu=4, num_imgs_per_file=600)
-    # reader.load_annotation()
-    # example = reader.convert_to_example(reader._annotations[150])
-    # env = HandEnv(dataset='icvl', subset='training', max_iters=10, predefined_bbx=reader.predefined_bbx)
-    # env.reset(example)
     pass
 
 

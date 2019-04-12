@@ -21,7 +21,7 @@ class Pretrain(object):
                 last_out = tf.contrib.layers.conv3d(inputs=last_out,
                                                     num_outputs=i,
                                                     kernel_size=5,
-                                                    activation_fn=tf.nn.elu,
+                                                    activation_fn=tf.nn.relu,
                                                     stride=1,
                                                     padding='SAME',
                                                     data_format='NDHWC',
@@ -37,7 +37,7 @@ class Pretrain(object):
                 fc_out = tf.contrib.layers.dropout(
                     tf.contrib.layers.fully_connected(inputs=fc_out,
                                                       num_outputs=i,
-                                                      activation_fn=tf.nn.elu,
+                                                      activation_fn=tf.nn.relu,
                                                       scope='fc%i' % idx), keep_prob=dropout_prob)
             # the last layer
             ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
@@ -62,8 +62,7 @@ def get_target_updates(_vars, target_vars, tau):
 
 
 class Actor(object):
-    def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
-        # obs_width: W, H, D, C; change to D, H, W, C
+    def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, step_size=0.1, tau=0.001, lr=1e-4):
         self.obs_dims = obs_dims
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
@@ -75,11 +74,13 @@ class Actor(object):
         self.sess = None
 
         # build model
+        self.step_size = tf.constant(step_size, name='step_size')
         self.obs, self.ac, self.actor_vars = self.build_model(self.scope)
         self.target_obs, self.target_ac, self.target_actor_vars = self.build_model(self.target_scope)
         self.update_target_ops = get_target_updates(self.actor_vars, self.target_actor_vars, self.tau)
 
         # variable for optimization
+        self.global_step = tf.Variable(0, trainable=False, name='step')
         self.q_gradient_input = tf.placeholder(shape=(None, self.ac_dim), dtype=tf.float32, name='q_gradient')
         self.optimizer, self.actor_loss = self.set_optimizer()
 
@@ -111,16 +112,16 @@ class Actor(object):
                                                            activation_fn=tf.nn.elu,
                                                            scope='fc%i' % idx)
             # the last layer
-            ac = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
-                                                   activation_fn=None, scope='last_fc')
-            # TODO: clip the value of ac
+            ac = self.step_size * tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
+                                                                    activation_fn=None, scope='last_fc')
         scope_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
         return obs, ac, scope_vars
 
     def set_optimizer(self):
         actor_loss = - tf.reduce_mean(self.ac * self.q_gradient_input, axis=0)
         actor_grads = tf.gradients(actor_loss, self.actor_vars)
-        optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(actor_grads, self.actor_vars))
+        optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(actor_grads, self.actor_vars),
+                                                                    global_step=self.global_step)
         return optimizer, actor_loss
 
     def load_sess(self, sess):
@@ -136,7 +137,7 @@ class Actor(object):
 
     def train(self, q_gradient, obs):
         # optimization
-        return self.sess.run([self.optimizer, self.actor_loss],
+        return self.sess.run([self.optimizer, self.actor_loss, self.global_step],
                              feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
 
     def get_trainable_variables(self):
@@ -148,7 +149,6 @@ class Actor(object):
 
 class Critic(object):
     def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, tau=0.001, lr=1e-4):
-        # obs_width: W, H, D, C; change to D, H, W, C
         self.obs_dims = obs_dims
         self.fc_layer = fc_layer
         self.cnn_layer = cnn_layer
@@ -196,7 +196,7 @@ class Critic(object):
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
             for idx, i in enumerate(self.fc_layer):
-                if idx == 2:
+                if idx == 1:
                     fc_out = tf.concat([fc_out, ac], axis=1)
                 fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
                                                            num_outputs=i,

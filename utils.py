@@ -5,6 +5,9 @@ import tensorflow as tf
 from mpl_toolkits.mplot3d import Axes3D
 
 
+"""=================utility functions for training=================="""
+
+
 def print_args(args):
     """ Prints the argparse argmuments applied
     Args:
@@ -98,7 +101,34 @@ def rotmat2expmap(R):
     return A
 
 
-def inverse_kinematics(joint_xyz, chain_idx, warning=False):
+def computelie(lie_params):
+    # lie_params [N, 6], compute g_{1:N} [N, 4, 4]
+    njoints = np.shape(lie_params)[0]
+    A = np.zeros([njoints, 4, 4])
+    lie_group = np.zeros([njoints, 4, 4])
+
+    for j in range(njoints):
+        if j == 0:
+            # root joint
+            tmp = lietomatrix(lie_params[j + 1, 0:3], lie_params[j, 3:6])
+            A[j, :, :] = tmp
+            lie_group[j, :, :] = tmp
+        elif j == njoints-1:
+            # end effector of the chain
+            tmp = lietomatrix(np.array([0, 0, 0]), lie_params[j, 3:6])
+            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
+            lie_group[j, :, :] = tmp
+        else:
+            tmp = lietomatrix(lie_params[j+1, 0:3], lie_params[j, 3:6])
+            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
+            lie_group[j, :, :] = tmp
+
+    tmp_coor = np.array([0, 0, 0, 1]).reshape((4, 1))
+    joint_xyz = np.matmul(A, tmp_coor)[:, 0:3, 0]
+    return joint_xyz, lie_group
+
+
+def inverse_kinematics(joint_xyz, chain_idx):
     # joint_xyz: [num_joints, 3]
     njoints = joint_xyz.shape[0]
     lie_paras = np.zeros([njoints, 6])
@@ -128,31 +158,11 @@ def inverse_kinematics(joint_xyz, chain_idx, warning=False):
     return lie_paras
 
 
-def computelie(lie_params):
-    # lie_params [N, 6], compute g_{1:N} [N, 4, 4]
-    njoints = np.shape(lie_params)[0]
-    A = np.zeros([njoints, 4, 4])
-
-    for j in range(njoints):
-        if j == 0:
-            A[j, :, :] = lietomatrix(lie_params[j+1, 0:3], lie_params[j, 3:6])
-        elif j == njoints-1:
-            tmp = lietomatrix(np.array([0, 0, 0]), lie_params[j, 3:6])
-            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
-        else:
-            tmp = lietomatrix(lie_params[j+1, 0:3], lie_params[j, 3:6])
-            A[j, :, :] = np.matmul(A[j-1, :, :], tmp)
-
-    tmp_coor = np.array([0, 0, 0, 1]).reshape((4, 1))
-    joint_xyz = np.matmul(A, tmp_coor)[:, 0:3, 0]
-    return joint_xyz, A
-
-
 def forward_kinematics(lie_paras, chain_idx):
     # lie_params [njoints, 6]
     njoints = lie_paras.shape[0]
     joint_xyz_f = np.zeros([njoints, 3])
-    lie_group = np.zeros([njoints, 4, 4])
+    lie_groups = []
 
     root_idx = chain_idx[0][0]
     for k, _idx in enumerate(chain_idx):
@@ -161,14 +171,45 @@ def forward_kinematics(lie_paras, chain_idx):
             A = lietomatrix(lie_paras[root_idx, 0:3], lie_paras[root_idx, 3:6])
             tmp = np.array([0, 0, 0, 1]).reshape((4, 1))
             joint_xyz_f[root_idx, :] = np.matmul(A, tmp)[0:3, 0]
-            lie_group[root_idx, :, :] = A
         else:
             # append root joint idx
             idx = [root_idx] + _idx
-            joint_xyz, A = computelie(lie_paras[idx, :])
+            joint_xyz, lie_group = computelie(lie_paras[idx, :])
             joint_xyz_f[idx[1:], :] = joint_xyz[1:]
-            lie_group[idx[1:], :, :] = A[1:, :, :]
-    return joint_xyz_f, lie_group
+            lie_groups.append(lie_group)
+    return joint_xyz_f, lie_groups
+
+
+def update_lie_groups(prior_lie_group, lie_algebras):
+    """
+    inputs:
+        prior_lie_group: [num_chain_joints, 4, 4]
+        lie_algebras: [num_chain_joints, 6]
+    """
+    njoints = np.shape(lie_algebras)[0]
+    g = np.zeros([njoints, 4, 4])
+    new_lie_group = np.zeros([njoints, 4, 4])
+
+    for j in range(njoints):
+        if j == 0:
+            # root joint
+            tmp = lietomatrix(lie_algebras[j+1, 0:3], lie_algebras[j, 3:6])
+            new_lie_group[j, :, :] = np.matmul(prior_lie_group[j, :, :], tmp)
+            g[j, :, :] = new_lie_group[j, :, :]
+        elif j == njoints-1:
+            # end effector of the chain
+            tmp = lietomatrix(np.array([0, 0, 0]), lie_algebras[j, 3:6])
+            new_lie_group[j, :, :] = np.matmul(prior_lie_group[j, :, :], tmp)
+            g[j, :, :] = np.matmul(g[j-1, :, :], new_lie_group[j, :, :])
+        else:
+            # intermediate joint on a chain
+            tmp = lietomatrix(lie_algebras[j+1, 0:3], lie_algebras[j, 3:6])
+            new_lie_group[j, :, :] = np.matmul(prior_lie_group[j, :, :], tmp)
+            g[j, :, :] = np.matmul(g[j - 1, :, :], new_lie_group[j, :, :])
+
+    tmp_coor = np.array([0, 0, 0, 1]).reshape((4, 1))
+    joint_xyz = np.matmul(g, tmp_coor)[:, 0:3, 0]
+    return joint_xyz, new_lie_group
 
 
 def pose_to_lie_algebras(pose, chains_idx):

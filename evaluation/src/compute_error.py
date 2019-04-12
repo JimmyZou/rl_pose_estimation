@@ -31,7 +31,7 @@ def draw_error_bar(dataset, errs, eval_names, fig):
         names = ['Palm', 'Thumb.R', 'Thumb.M', 'Thumb.T', 'Index.R', 'Index.M', 'Index.T', 'Mid.R', 'Mid.M', 'Mid.T', 'Ring.R', 'Ring.M', 'Ring.T', 'Pinky.R', 'Pinky.M', 'Pinky.T', 'Mean']
         max_range = 25
     elif dataset == 'nyu':
-        joint_idx = range(13, -1, -1)+[14]
+        joint_idx = list(range(13, -1, -1)) + [14]
         names = ['Palm', 'Wrist1', 'Wrist2', 'Thumb.R1', 'Thumb.R2', 'Thumb.T', 'Index.R', 'Index.T', 'Mid.R', 'Mid.T', 'Ring.R', 'Ring.T', 'Pinky.R', 'Pinky.T', 'Mean']
         max_range = 30
     elif dataset == 'msra':

@@ -14,6 +14,7 @@ import random
 from tensorboardX import SummaryWriter
 import multiprocessing
 import pickle
+import glob
 
 
 def get_pose_volume(xyz_pose, bbx):
@@ -106,13 +107,15 @@ def pre_train(config):
     if config['dataset'] == 'nyu':
         dataset = NYUDataset(subset='training', root_dir='/hand_pose_data/nyu/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
-        # (160, 120, 70), 6 * 14 = 84
+        weights = np.ones([1, dataset.jnt_num])
+        weights[0, 13] = 2  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
-        # (140, 120, 60), 6 * 16 = 96
+        weights = np.ones([1, dataset.jnt_num])
+        weights[0, 0] = 2  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     elif config['dataset'] == 'mrsa15':
@@ -120,12 +123,15 @@ def pre_train(config):
         dataset = MRSADataset(subset='training', test_fold=config['mrsa_test_fold'],
                               root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
+        weights = np.ones([1, dataset.jnt_num])
+        weights[0, 0] = 2  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
+    print('Loss Weights:', weights)
     obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 1)
-    env = HandEnv(dataset=config['dataset'],
+    env = HandEnv(dataset_name=config['dataset'],
                   subset='training',
                   max_iters=5,
                   predefined_bbx=dataset.predefined_bbx,
@@ -136,8 +142,9 @@ def pre_train(config):
     # define model and loss
     model = Pretrain(scope, obs_dims, cnn_layer, fc_layer, ac_dim)  # model.obs, model.ac, model.dropout_prob
     tf_label = tf.placeholder(shape=(None, ac_dim), dtype=tf.float32, name='action')
+    tf_weights = tf.placeholder(shape=(1, dataset.jnt_num), dtype=tf.float32, name='action')
     # average joint mse error
-    tf_mse = tf.reduce_mean(tf.reduce_sum(
+    tf_mse = tf.reduce_mean(tf_weights * tf.reduce_sum(
         tf.reshape(tf.square(model.ac - tf_label), [-1, int(ac_dim / 3), 3]), axis=2), axis=1)
     tf_loss = tf.reduce_mean(tf_mse)  # average over mini-batch
     tf_max_error = tf.sqrt(tf.reduce_max(tf.reduce_sum(
@@ -185,7 +192,8 @@ def pre_train(config):
                     batch_loss, batch_max_error = sess.run([tf_mse, tf_max_error],
                                                            feed_dict={model.obs: x_test[idx1: idx2, ...],
                                                                       tf_label: y_test[idx1: idx2],
-                                                                      model.dropout_prob: 1.0})
+                                                                      model.dropout_prob: 1.0,
+                                                                      tf_weights: weights})
                     loss_list.append(batch_loss)
                     max_error_list.append(batch_max_error)
                 test_loss = np.mean(np.hstack(loss_list))
@@ -213,7 +221,8 @@ def pre_train(config):
                 _, batch_loss, step = sess.run([optimizer, tf_loss, global_step],
                                                feed_dict={model.obs: x_train[batch_idx, ...],
                                                           tf_label: y_train[batch_idx],
-                                                          model.dropout_prob: 0.5})
+                                                          model.dropout_prob: 0.5,
+                                                          tf_weights: weights})
                 loss_list.append(batch_loss)
             end_time = time.time()
             writer.add_scalar(config['dataset'] + '_train_loss', np.mean(loss_list), i)
@@ -252,13 +261,14 @@ def pre_test(config):
     else:
         raise ValueError('Dataset name %s error...' % config['dataset'])
     obs_dims = (dataset.predefined_bbx[2] + 1, dataset.predefined_bbx[1] + 1, dataset.predefined_bbx[0] + 1, 1)
-    env = HandEnv(dataset=config['dataset'],
+    env = HandEnv(dataset_name=config['dataset'],
                   subset='training',
                   max_iters=5,
                   predefined_bbx=dataset.predefined_bbx,
                   pretrained_model=None)
     scope = 'pre_train'
     batch_size = config['batch_size']
+    tf.reset_default_graph()
     model = Pretrain(scope, obs_dims, cnn_layer, fc_layer, ac_dim)  # model.obs, model.ac, model.dropout_prob
     tf_label = tf.placeholder(shape=(None, ac_dim), dtype=tf.float32, name='action')
     tf_max_error = tf.sqrt(tf.reduce_max(tf.reduce_sum(
@@ -284,7 +294,8 @@ def pre_test(config):
 
         # # check function transfer_pretest_pose()
         # i = 0
-        # filename, pred_pose = transfer_pretest_pose(y_test[i, :], other_data[i], dataset.jnt_num, env.chains_idx,
+        # filename, pred_pose = transfer_pretest_pose(y_test[i, :].reshape([int(ac_dim/3), 3]), other_data[i],
+        #                                             dataset.jnt_num, env.chains_idx,
         #                                             dataset.predefined_bbx, dataset.camera_cfg, config['dataset'])
         # print(filename, '\n', pred_pose)
 
@@ -345,6 +356,17 @@ def pre_test(config):
                             root_dir + config['dataset'] + '_pretrain_rl_pose_estimation.txt')
 
 
+def write_text_file_mrsa15(results_dir='../../results/mrsa15/'):
+    file_list = glob.glob(results_dir + 'pre_test_results*')
+    preds = {}
+    for file in file_list:
+        with open(file, 'rb') as f:
+            pred = pickle.load(f)
+            preds.update(pred)
+    write_text_file(preds, 'mrsa15', results_dir + 'mrsa15_pretrain_rl_pose_estimation.txt',
+                    evaluation_dir='../evaluation/')
+
+
 def write_text_file(preds, dataset_name, save_dir, evaluation_dir='../evaluation/'):
     if dataset_name == 'mrsa15':
         dir_file_test_list = evaluation_dir + 'groundtruth/msra/msra_test_list.txt'
@@ -372,9 +394,9 @@ def transfer_pretest_pose(pred_pose, other_info, num_joints, chains_idx, predefi
     # pred_pose, _ = utils.lie_algebras_to_pose(pred_algebra, num_joints, chains_idx)
     raw_pose = utils.transfer_pose(pred_pose, rotated_bbx, coeff, predefined_bbx, pose_bbx)
     if dataset_name == 'mrsa15':
-        annotations = raw_pose * np.array([[1.0, -1.0, -1.0]])
+        annotations = utils.xyz2uvd(raw_pose.reshape([-1]), camera_cfg)
     elif dataset_name == 'nyu':
-        annotations = raw_pose * np.array([[1.0, -1.0, 1.0]])
+        annotations = utils.xyz2uvd(raw_pose.reshape([-1]), camera_cfg)
     elif dataset_name == 'icvl':
         annotations = utils.xyz2uvd(raw_pose.reshape([-1]), camera_cfg)
     else:
@@ -391,13 +413,13 @@ def get_config():
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
     parser.add_argument('--n_rounds', '-nr', type=int, default=2000)
     parser.add_argument('--train_iters', '-ni', type=int, default=100)
-    parser.add_argument('--dataset', '-data', type=str, default='icvl')
+    parser.add_argument('--dataset', '-data', type=str, default='nyu')
     parser.add_argument('--mrsa_test_fold', '-mtf', type=str, default='P8')
     parser.add_argument('--files_per_time', '-fpt', type=int, default=10)
     parser.add_argument('--samples_per_time', '-spt', type=int, default=2000)
     parser.add_argument('--lr_start', '-lr', help='learning rate', type=float, default=0.0001)
     parser.add_argument('--lr_decay_rate', default=0.99)
-    parser.add_argument('--lr_decay_iters', default=1000)
+    parser.add_argument('--lr_decay_iters', default=2000)
     parser.add_argument('--new_training', '-new', type=bool, default=1)
     parser.add_argument('--test_gap', '-tg', type=int, default=2)
     parser.add_argument('--num_cpus', '-cpus', type=int, default=32)
@@ -414,9 +436,15 @@ def main():
         pre_train(config)
     elif config['mode'] == 'pretest':
         pre_test(config)
+    elif config['mode'] == 'all':
+        pre_train(config)
+        pre_test(config)
+    elif config['mode'] == 'write_mrsa15':
+        write_text_file_mrsa15()
     else:
         raise ValueError('Args mode errors: %s' % config['mode'])
 
 
 if __name__ == '__main__':
     main()
+

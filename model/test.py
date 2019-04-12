@@ -53,7 +53,7 @@ def train(config):
                     fc_layer=critic_fc_layer,
                     tau=config['tau'],
                     lr=config['critic_lr'])
-    env = HandEnv(dataset=config['dataset'],
+    env = HandEnv(dataset_name=config['dataset'],
                   subset='training',
                   max_iters=config['max_iters'],
                   predefined_bbx=dataset.predefined_bbx)
