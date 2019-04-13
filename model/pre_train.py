@@ -108,14 +108,14 @@ def pre_train(config):
         dataset = NYUDataset(subset='training', root_dir='/hand_pose_data/nyu/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
         weights = np.ones([1, dataset.jnt_num])
-        weights[0, 13] = 2  # weight root joint error
+        weights[0, 13] = config['root_weight']  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     elif config['dataset'] == 'icvl':
         dataset = ICVLDataset(subset='training', root_dir='/hand_pose_data/icvl/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
         weights = np.ones([1, dataset.jnt_num])
-        weights[0, 0] = 2  # weight root joint error
+        weights[0, 0] = config['root_weight']  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     elif config['dataset'] == 'mrsa15':
@@ -124,7 +124,7 @@ def pre_train(config):
                               root_dir='/hand_pose_data/mrsa15/', predefined_bbx=(63, 63, 31))
         ac_dim = 3 * dataset.jnt_num
         weights = np.ones([1, dataset.jnt_num])
-        weights[0, 0] = 2  # weight root joint error
+        weights[0, 0] = config['root_weight']  # weight root joint error
         cnn_layer = (8, 16, 32, 64, 128)  # 512
         fc_layer = (512, 512, 256)
     else:
@@ -411,6 +411,7 @@ def get_config():
     parser.add_argument('--gpu_id', '-id', type=str, default='0')
     parser.add_argument('--saved_model_path', '-smp', type=str, default='../../results/')
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
+    parser.add_argument('--root_weight', '-w', type=float, default=4)
     parser.add_argument('--n_rounds', '-nr', type=int, default=2000)
     parser.add_argument('--train_iters', '-ni', type=int, default=100)
     parser.add_argument('--dataset', '-data', type=str, default='nyu')
@@ -419,8 +420,8 @@ def get_config():
     parser.add_argument('--samples_per_time', '-spt', type=int, default=2000)
     parser.add_argument('--lr_start', '-lr', help='learning rate', type=float, default=0.0001)
     parser.add_argument('--lr_decay_rate', default=0.99)
-    parser.add_argument('--lr_decay_iters', default=2000)
-    parser.add_argument('--new_training', '-new', type=bool, default=1)
+    parser.add_argument('--lr_decay_iters', default=3000)
+    parser.add_argument('--new_training', '-new', type=bool, default=0)
     parser.add_argument('--test_gap', '-tg', type=int, default=2)
     parser.add_argument('--num_cpus', '-cpus', type=int, default=32)
     args = vars(parser.parse_args())

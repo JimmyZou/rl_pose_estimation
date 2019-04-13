@@ -11,49 +11,60 @@ class ReplayBuffer(object):
         self.buffer = deque(maxlen=buffer_size)
         self.save_path = save_path
 
-    @staticmethod
-    def xyzpose2volume(volume, xyz_pose, next_xyz_pose, i):
-        pose_volume = np.zeros_like(volume, dtype=np.int8)
-        next_pose_volume = np.zeros_like(volume, dtype=np.int8)
+    # @staticmethod
+    # def xyzpose2volume(volume, xyz_pose, next_xyz_pose, i):
+    #     pose_volume = np.zeros_like(volume, dtype=np.int8)
+    #     next_pose_volume = np.zeros_like(volume, dtype=np.int8)
+    #
+    #     for j in range(xyz_pose.shape[1]):
+    #         tmp = xyz_pose[0, j, :].astype(np.int32)
+    #         joint_coor = (0, tmp[2], tmp[1], tmp[0])
+    #         pose_volume[joint_coor] = 4
+    #
+    #         tmp = next_xyz_pose[0, j, :].astype(np.int32)
+    #         joint_coor = (0, tmp[2], tmp[1], tmp[0])
+    #         next_pose_volume[joint_coor] = 4
+    #     obs = np.stack([volume, pose_volume], axis=-1)
+    #     obs_next = np.stack([volume, next_pose_volume], axis=-1)
+    #     return i, obs, obs_next
+    #
+    # def get_batch(self, batch_size, num_cpus=32):
+    #     # Randomly sample batch_size examples
+    #     # (obs_volume, obs_pose, acs, rs, next_obs_pose, gammas)
+    #     batch = random.sample(self.buffer, batch_size)
+    #     obs_volume, obs_pose, acs, rs, next_obs_pose, gammas = zip(*batch)
+    #
+    #     # convert xyz pose to volume pose
+    #     pool = multiprocessing.Pool(num_cpus)
+    #     results = []
+    #     for i in range(batch_size):
+    #         results.append(pool.apply_async(self.xyzpose2volume, (obs_volume[i], obs_pose[i], next_obs_pose[i], i,)))
+    #     pool.close()
+    #     pool.join()
+    #     _, D, H, W = obs_volume[0].shape
+    #     obs = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
+    #     obs_next = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
+    #     for result in results:
+    #         tmp = result.get()  # i, obs, obs_next
+    #         obs[tmp[0]: tmp[0]+1, ...] = tmp[1]
+    #         obs_next[tmp[0]: tmp[0]+1, ...] = tmp[2]
+    #
+    #     # concatenate to array
+    #     batch_data = [np.concatenate(item, axis=0) for item in [acs, rs, gammas]]
+    #     batch_data += [obs, obs_next]
+    #     # batch_data: [acs, rs, gammas, obs, obs_next]
+    #     return batch_data
 
-        for j in range(xyz_pose.shape[1]):
-            tmp = xyz_pose[0, j, :].astype(np.int32)
-            joint_coor = (0, tmp[2], tmp[1], tmp[0])
-            pose_volume[joint_coor] = 4
-
-            tmp = next_xyz_pose[0, j, :].astype(np.int32)
-            joint_coor = (0, tmp[2], tmp[1], tmp[0])
-            next_pose_volume[joint_coor] = 4
-        obs = np.stack([volume, pose_volume], axis=-1)
-        obs_next = np.stack([volume, next_pose_volume], axis=-1)
-        return i, obs, obs_next
-
-    def get_batch(self, batch_size, num_cpus=32):
+    def get_batch(self, batch_size):
         # Randomly sample batch_size examples
         # (obs_volume, obs_pose, acs, rs, next_obs_pose, gammas)
         batch = random.sample(self.buffer, batch_size)
-        obs_volume, obs_pose, acs, rs, next_obs_pose, gammas = zip(*batch)
-
-        # convert xyz pose to volume pose
-        pool = multiprocessing.Pool(num_cpus)
-        results = []
-        for i in range(batch_size):
-            results.append(pool.apply_async(self.xyzpose2volume, (obs_volume[i], obs_pose[i], next_obs_pose[i], i,)))
-        pool.close()
-        pool.join()
-        _, D, H, W = obs_volume[0].shape
-        obs = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
-        obs_next = np.zeros([batch_size, D, H, W, 2], dtype=np.int8)
-        for result in results:
-            tmp = result.get()  # i, obs, obs_next
-            obs[tmp[0]: tmp[0]+1, ...] = tmp[1]
-            obs_next[tmp[0]: tmp[0]+1, ...] = tmp[2]
-
-        # concatenate to array
-        batch_data = [np.concatenate(item, axis=0) for item in [acs, rs, gammas]]
-        batch_data += [obs, obs_next]
-        # batch_data: [acs, rs, gammas, obs, obs_next]
-        return batch_data
+        obs_volume, obs_pose, acs, rs, next_obs_pose, gammas = zip(*batch)  # [N, W, H, D, 1]
+        batch_data = [np.concatenate(item, axis=0) for item in [obs_volume, obs_pose, acs, rs, next_obs_pose, gammas]]
+        obs = np.concatenate([batch_data[0], batch_data[1]], axis=4)
+        obs_next = np.concatenate([batch_data[0], batch_data[4]], axis=4)
+        # [acs, rs, gammas, obs, obs_next]
+        return batch_data[2], batch_data[3], batch_data[5], obs, obs_next
 
     def add(self, sample):
         # sample = [(obs_volume, obs_pose, acs, rs, next_obs_pose, gammas), ...]
@@ -157,12 +168,13 @@ class SamplerOld(object):
 
 
 class Sampler(object):
-    def __init__(self, actor, env, dataset, gamma=0.9):
+    def __init__(self, actor, env, dataset, step_size, gamma=0.9):
         self.actor = actor
         self.env = env
         self.dataset = dataset
         self.predefined_bbx = self.env.predefined_bbx
         self.gamma = gamma
+        self.step_size = step_size
 
     def collect_experiences_batch_examples(self, examples, sess, num_cpus):
         """
@@ -178,24 +190,27 @@ class Sampler(object):
         acs = []
         rs = []
         gammas = []
+        max_error = []
         is_done = False
         self.env.reset(examples, sess)
         while not is_done:
-            state, pose = self.env.get_obs()  # NWHDC, [N, num_joint, 3]
-            ac_flat = self.actor.get_action(state)  # [N, ac_dims]
+            state, _ = self.env.get_obs()  # NWHDC, [N, num_joint, 3]
+            ac_flat = self.actor.get_action(obs=state, step_size=self.step_size, dropout_prob=1.0)  # [N, ac_dims]
             r, is_done = self.env.step(ac_flat)  # [N, 1]
 
-            obs_volume.append(state[..., 0])  # only volume of hand points are saved in obs_volume, NWHDC
-            obs_pose.append(pose)  # pose: [N, num_joint, 3]
+            obs_volume.append(state[..., 0:1])  # [N, W, H, D, 1]
+            obs_pose.append(state[..., 1:2])  # [N, W, H, D, 1]
             acs.append(ac_flat)  # ac_flat: [N, ac_dims]
             rs.append(r)  # r: [N, 1]
-            gammas.append(self.gamma * np.ones_like([batch_size, 1]))  # gamma: [N, 1]
+            gammas.append(self.gamma * np.ones([batch_size, 1]))  # gamma: [N, 1]
 
         obs_volume = np.stack(obs_volume, axis=0)  # [max_iter, N, W, H, D]
-        obs_pose = np.stack(obs_pose, axis=0)  # [max_iter, N, num_joint, 3]
+        obs_pose = np.stack(obs_pose, axis=0)  # [max_iter, N, W, H, D]
         acs = np.stack(acs, axis=0)  # [max_iter, N, ac_dims]
         rs = np.stack(rs, axis=0)  # [max_iter, N, 1]
         gammas = np.stack(gammas, axis=0)  # [max_iter, N, 1]
+        # print(obs_volume.shape, obs_pose.shape, acs.shape, rs.shape, gammas.shape)
+        max_error.append(self.env.batch_max_error())
 
         results = []
         pool = multiprocessing.Pool(num_cpus)
@@ -209,13 +224,13 @@ class Sampler(object):
         for result in results:
             tmp = result.get()
             samples += tmp
-        return samples, rs
+        return samples, rs, max_error
 
     @staticmethod
     def arrange_one_example(volume, pose, ac, r, gamma):
         """
-        volume: [max_iter, 1, W, H, D]
-        pose: [max_iter, 1, num_joint, 3]
+        volume: [max_iter, 1, W, H, D, 1]
+        pose: [max_iter, 1,  W, H, D, 1]
         ac: [max_iter, 1, ac_dims]
         r: [max_iter, 1, 1]
         gamma: [max_iter, 1, 1]
@@ -234,30 +249,40 @@ class Sampler(object):
         return samples
 
     def collect_experiences(self, num_files, num_batch_samples, batch_size, sess, num_cpus):
-        mul_experiences, rs_list = [], []
-        examples = random.sample(self.dataset.get_batch_samples_training(num_files), num_batch_samples * batch_size)
-        for i in range(num_batch_samples):
-            batch_examples = examples[i*batch_size: i*batch_size+batch_size]
-            samples, rs = self.collect_experiences_batch_examples(batch_examples, sess, num_cpus)
+        mul_experiences, rs_list, max_error_list = [], [], []
+        examples = random.sample(self.dataset.get_batch_samples_training(num_files), num_batch_samples)
+        for i in range(num_batch_samples//batch_size+1):
+            batch_examples = examples[i*batch_size: min((i+1)*batch_size, num_batch_samples)]
+            samples, rs, _max_error = self.collect_experiences_batch_examples(batch_examples, sess, num_cpus)
             mul_experiences += samples
-            rs_list.append(rs[:, :, 0].T)  # rs [max_iter, N, 1] to [N, max_iter]
-        rs = np.stack(rs_list, axis=0)
-        print('%i experiences were collected, %i examples' % (len(mul_experiences), num_batch_samples * batch_size))
-        print('average reward: %.4f' % np.mean(rs))
+            rs_list.append(rs[-1, :, 0])  # rs [max_iter, N, 1] to [N]
+            max_error_list.append(_max_error)
+        rs = np.hstack(rs_list)
+        max_error = np.hstack(max_error_list)
+        print('%i experiences were collected, %i examples' % (len(mul_experiences), num_batch_samples))
+        print('average reward: {:.4f}, average max error: {:.4f}'.format(np.mean(rs), np.mean(max_error)))
         return mul_experiences, rs
 
-    def test_batch_samples(self, examples):
-        is_done = False
-        self.env.reset(examples)
-        while not is_done:
-            state, pose = self.env.get_obs()  # NWHDC
-            ac_flat = self.actor.get_action(state)  # [N, ac_dims]
-            r, is_done = self.env.step(ac_flat)  # [N, 1]
-        pass
+    def aggregate_test_samples(self):
+        examples = []
+        for example in self.dataset.get_samples_testing():
+            examples += example
+        return examples
 
-    def test_multiple_samples(self):
-        results = []
-        for examples in self.dataset.get_samples_testing():
-            pass
-        return results
+    def test_batch_samples(self, examples, batch_size, sess):
+        N = len(examples)
+        max_error, rs = [], []
+        for i in range(N//batch_size+1):
+            self.env.reset(examples[i*batch_size: min((i+1)*batch_size, N)], sess)
+            is_done = False
+            while not is_done:
+                state, pose = self.env.get_obs()  # NWHDC
+                ac_flat = self.actor.get_action(obs=state, step_size=self.step_size, dropout_prob=1.0)  # [N, ac_dims]
+                r, is_done = self.env.step(ac_flat)  # [N, 1]
+            max_error.append(self.env.batch_max_error())
+            rs.append(r[:, 0])
+        max_error = np.hstack(max_error)
+        # print(max_error.shape)
+        rs = np.hstack(rs)
+        return max_error, rs
 

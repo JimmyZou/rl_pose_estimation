@@ -62,7 +62,7 @@ def get_target_updates(_vars, target_vars, tau):
 
 
 class Actor(object):
-    def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, step_size=0.1, tau=0.001, lr=1e-4):
+    def __init__(self, scope, obs_dims, ac_dim, cnn_layer, fc_layer, beta=1.0, tau=0.001, lr=1e-4):
         self.obs_dims = obs_dims
         self.cnn_layer = cnn_layer
         self.fc_layer = fc_layer
@@ -71,10 +71,12 @@ class Actor(object):
         self.target_scope = 'target_' + scope
         self.tau = tau
         self.lr = lr
+        self.beta = beta
         self.sess = None
 
         # build model
-        self.step_size = tf.constant(step_size, name='step_size')
+        self.step_size = tf.placeholder(shape=(), dtype=tf.float32, name='step_size')
+        self.dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
         self.obs, self.ac, self.actor_vars = self.build_model(self.scope)
         self.target_obs, self.target_ac, self.target_actor_vars = self.build_model(self.target_scope)
         self.update_target_ops = get_target_updates(self.actor_vars, self.target_actor_vars, self.tau)
@@ -107,10 +109,11 @@ class Actor(object):
                                                         scope='maxpooling%i' % idx)
             fc_out = tf.contrib.layers.flatten(last_out, scope='flatten')
             for idx, i in enumerate(self.fc_layer):
-                fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                           num_outputs=i,
-                                                           activation_fn=tf.nn.elu,
-                                                           scope='fc%i' % idx)
+                fc_out = tf.contrib.layers.dropout(
+                    tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                      num_outputs=i,
+                                                      activation_fn=tf.nn.elu,
+                                                      scope='fc%i' % idx), keep_prob=self.dropout_prob)
             # the last layer
             ac = self.step_size * tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=self.ac_dim,
                                                                     activation_fn=None, scope='last_fc')
@@ -118,7 +121,8 @@ class Actor(object):
         return obs, ac, scope_vars
 
     def set_optimizer(self):
-        actor_loss = - tf.reduce_mean(self.ac * self.q_gradient_input, axis=0)
+        actor_loss = - tf.reduce_mean(self.ac * self.q_gradient_input, axis=0) \
+                     + self.beta * tf.reduce_mean(tf.square(self.ac), axis=0)
         actor_grads = tf.gradients(actor_loss, self.actor_vars)
         optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(actor_grads, self.actor_vars),
                                                                     global_step=self.global_step)
@@ -127,18 +131,23 @@ class Actor(object):
     def load_sess(self, sess):
         self.sess = sess
 
-    def get_action(self, obs):
+    def get_action(self, obs, step_size, dropout_prob):
         # get action using current policy
-        return self.sess.run(self.ac, feed_dict={self.obs: obs})
+        return self.sess.run(self.ac, feed_dict={self.obs: obs,
+                                                 self.step_size: step_size,
+                                                 self.dropout_prob: dropout_prob})
 
-    def get_target_action(self, obs):
+    def get_target_action(self, obs, step_size, dropout_prob):
         # get action using target policy
-        return self.sess.run(self.target_ac, feed_dict={self.target_obs: obs})
+        return self.sess.run(self.target_ac, feed_dict={self.target_obs: obs,
+                                                        self.step_size: step_size,
+                                                        self.dropout_prob: dropout_prob})
 
-    def train(self, q_gradient, obs):
+    def train(self, q_gradient, obs, step_size, dropout_prob):
         # optimization
-        return self.sess.run([self.optimizer, self.actor_loss, self.global_step],
-                             feed_dict={self.q_gradient_input: q_gradient, self.obs: obs})
+        return self.sess.run([self.optimizer, self.actor_loss, self.global_step, self.ac],
+                             feed_dict={self.q_gradient_input: q_gradient, self.obs: obs,
+                                        self.step_size: step_size, self.dropout_prob: dropout_prob})
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
@@ -160,6 +169,7 @@ class Critic(object):
         self.sess = None
 
         # build model
+        self.dropout_prob = tf.placeholder(shape=(), dtype=tf.float32, name='dropout_prob')
         self.obs, self.ac, self.q, self.critic_vars = self.build_model(self.scope)
         self.target_obs, self.target_ac, self.target_q, self.target_critic_vars = self.build_model(self.target_scope)
         self.update_target_ops = get_target_updates(self.critic_vars, self.target_critic_vars, self.tau)
@@ -198,10 +208,11 @@ class Critic(object):
             for idx, i in enumerate(self.fc_layer):
                 if idx == 1:
                     fc_out = tf.concat([fc_out, ac], axis=1)
-                fc_out = tf.contrib.layers.fully_connected(inputs=fc_out,
-                                                           num_outputs=i,
-                                                           activation_fn=tf.nn.elu,
-                                                           scope='fc%i' % idx)
+                fc_out = tf.contrib.layers.dropout(
+                    tf.contrib.layers.fully_connected(inputs=fc_out,
+                                                      num_outputs=i,
+                                                      activation_fn=tf.nn.elu,
+                                                      scope='fc%i' % idx), keep_prob=self.dropout_prob)
             # last layer
             q_value = tf.contrib.layers.fully_connected(inputs=fc_out, num_outputs=1,
                                                         activation_fn=None, scope='last_fc')
@@ -217,20 +228,22 @@ class Critic(object):
     def load_sess(self, sess):
         self.sess = sess
 
-    def get_q(self, obs, ac):
-        return self.sess.run(self.q, feed_dict={self.obs: obs, self.ac: ac})
+    def get_q(self, obs, ac, dropout_prob):
+        return self.sess.run(self.q, feed_dict={self.obs: obs, self.ac: ac, self.dropout_prob: dropout_prob})
 
-    def get_target_q(self, obs, ac):
-        return self.sess.run(self.target_q, feed_dict={self.target_obs: obs, self.target_ac: ac})
+    def get_target_q(self, obs, ac, dropout_prob):
+        return self.sess.run(self.target_q, feed_dict={self.target_obs: obs,
+                                                       self.target_ac: ac,
+                                                       self.dropout_prob: dropout_prob})
 
-    def get_q_gradient(self, obs, ac):
-        return self.sess.run(self.q_gradient, feed_dict={self.obs: obs, self.ac: ac})
+    def get_q_gradient(self, obs, ac, dropout_prob):
+        return self.sess.run(self.q_gradient, feed_dict={self.obs: obs, self.ac: ac, self.dropout_prob: dropout_prob})
 
-    def train(self, obs, ac, next_obs, next_ac, r, gamma):
+    def train(self, obs, ac, next_obs, next_ac, r, gamma, dropout_prob):
         return self.sess.run([self.optimizer, self.q_loss],
                              feed_dict={self.obs: obs, self.ac: ac, self.r: r,
                                         self.gamma: gamma, self.target_obs: next_obs,
-                                        self.target_ac: next_ac})
+                                        self.target_ac: next_ac,  self.dropout_prob: dropout_prob})
 
     def get_trainable_variables(self):
         return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)

@@ -330,7 +330,7 @@ class HandEnv(object):
             self.resize_ratio[idx, :] = resize_ratio
             self.lie_groups[idx] = lie_group
             self.init_max_error[idx] = max_error
-        print('Loaded %i samples...' % self.batch_size)
+        # print('Loaded %i samples...' % self.batch_size)
 
     def get_obs(self):
         """
@@ -367,7 +367,7 @@ class HandEnv(object):
         """
         is_done = False
         self.current_iter += 1
-        if self.current_iter > self.max_iters:
+        if self.current_iter >= self.max_iters:
             is_done = True
 
         # # debug
@@ -408,6 +408,14 @@ class HandEnv(object):
         rs = np.clip(rs, -self.reward_range, self.reward_range)
         return rs, is_done
 
+    def transfer_pose(self):
+        raise NotImplemented
+
+    def batch_max_error(self):
+        # array [N, num_joint, 3]
+        max_error = np.max(np.linalg.norm(self.current_pose - self.rotated_target_pose, axis=2), axis=1)
+        return max_error
+
     @staticmethod
     def iterative_pose_adjust(batch_idx, prior_lie_group, ac, num_joints, chains_idx,
                               root_coordinate, target_pose, init_error):
@@ -445,7 +453,7 @@ class HandEnv(object):
 
         # reward
         max_error = np.max(np.linalg.norm(target_pose - new_pose, axis=1))
-        reward = max_error - init_error
+        reward = init_error - max_error
         return batch_idx, new_lie_groups, new_pose, reward
 
 
@@ -473,6 +481,7 @@ class HandEnv(object):
         x_max, y_max, z_max = bbx
         # WHD
         pose_volume = np.zeros([x_max + 1, y_max + 1, z_max + 1], dtype=np.int8)
+        xyz_pose = np.clip(xyz_pose, [0, 0, 0], [x_max, y_max, z_max])
         for j in range(xyz_pose.shape[0]):
             tmp = xyz_pose[j, :].astype(np.int32)
             joint_coor = (tmp[0], tmp[1], tmp[2])
