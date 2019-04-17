@@ -229,9 +229,12 @@ def main():
     fig = plt.figure(figsize=(16, 6))
     plt.figure(fig.number)
     draw_error_bar(dataset, eval_errs, eval_names, fig)
-    #plt.savefig('figures/{}_error_bar.png'.format(dataset))
+    plt.savefig('figures/{}_error_bar.pdf'.format(dataset), bbox_inches='tight')
+
+    fig = plt.figure(figsize=(16, 6))
+    plt.figure(fig.number)
     draw_error_curve(eval_errs, eval_names, metric_type, fig)
-    plt.savefig('figures/{}_error.png'.format(dataset))
+    plt.savefig('figures/{}_error.pdf'.format(dataset), bbox_inches='tight')
     
     # msra viewpoint
     if dataset == 'msra':

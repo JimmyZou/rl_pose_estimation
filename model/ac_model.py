@@ -220,7 +220,8 @@ class Critic(object):
         return obs, ac, q_value, scope_vars
 
     def set_optimizer(self):
-        q_loss = tf.reduce_mean(tf.square(self.r + self.gamma * self.target_q - self.q), axis=0)
+        weight_decay = tf.add_n([0.01 * tf.nn.l2_loss(var) for var in self.critic_vars])
+        q_loss = tf.reduce_mean(tf.square(self.r + self.gamma * self.target_q - self.q), axis=0) + weight_decay
         critic_grads = tf.gradients(q_loss, self.critic_vars)
         optimizer = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(critic_grads, self.critic_vars))
         return optimizer, q_loss

@@ -251,7 +251,7 @@ def train(config):
         # load actor model
         save_actor_dir = root_dir + config['dataset'] + '_actor.pkl'
         if os.path.exists(save_actor_dir):
-            utils.loadFromFlat(actor.get_trainable_variables(), save_actor_dir)
+            # utils.loadFromFlat(actor.get_trainable_variables(), save_actor_dir)
             print("Actor parameter loaded from %s" % save_actor_dir)
         else:
             print("[Warning]: initialize the actor model")
@@ -261,7 +261,7 @@ def train(config):
         # critic model
         save_critic_dir = root_dir + config['dataset'] + '_critic.pkl'
         if os.path.exists(save_critic_dir):
-            utils.loadFromFlat(critic.get_trainable_variables(), save_critic_dir)
+            # utils.loadFromFlat(critic.get_trainable_variables(), save_critic_dir)
             print("Critic parameter loaded from %s" % save_critic_dir)
         else:
             print("[Warning]: initialize critic root model")
@@ -276,16 +276,16 @@ def train(config):
                 # test
                 start_time = time.time()
                 print('>>>number of examples for testing: %i(%i)'
-                      % (2*config['num_batch_samples'], len(test_examples)))
-                examples = random.sample(test_examples, 2*config['num_batch_samples'])
+                      % (min(2*config['num_batch_samples'], len(test_examples)), len(test_examples)))
+                examples = random.sample(test_examples, min(2*config['num_batch_samples'], len(test_examples)))
                 max_error, rs = sampler.test_batch_samples(examples, 8*config['batch_size'], sess)
                 writer.add_histogram('RL_' + config['dataset'] + '_final_rewards', rs, i)
                 writer.add_histogram('RL_' + config['dataset'] + '_max_error', max_error, i)
                 writer.add_scalar('RL_' + config['dataset'] + '_mean_max_error', np.mean(max_error), i)
                 if best_max_error > np.mean(max_error):
                     # save model
-                    # utils.saveToFlat(actor.get_trainable_variables(), save_actor_dir)
-                    # utils.saveToFlat(critic.get_trainable_variables(), save_critic_dir)
+                    utils.saveToFlat(actor.get_trainable_variables(), save_actor_dir)
+                    utils.saveToFlat(critic.get_trainable_variables(), save_critic_dir)
                     best_max_error = np.mean(max_error)
                     print('>>>Model save as %s' % save_actor_dir)
                 end_time = time.time()
@@ -301,7 +301,7 @@ def train(config):
                                                           num_cpus=config['num_cpus'])
             buffer.add(experiences)
             end_time = time.time()
-            print('Sampling: time used %.2fs' % (end_time-start_time))
+            print('Sampling: time used %.2fs, buffer size %i' % (end_time-start_time, buffer.count()))
 
             # training
             start_time = time.time()
@@ -439,22 +439,22 @@ def get_config():
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
     parser.add_argument('--num_cpus', '-cpus', type=int, default=32)
 
-    parser.add_argument('--n_rounds', '-nr', type=int, default=1000)
-    parser.add_argument('--train_iters', '-ni', type=int, default=80)
-    parser.add_argument('--update_iters', '-ui', type=int, default=20)
-    parser.add_argument('--tau', '-tau', type=float, default=0.1)
+    parser.add_argument('--n_rounds', '-nr', type=int, default=500)
+    parser.add_argument('--train_iters', '-ni', type=int, default=400)
+    parser.add_argument('--update_iters', '-ui', type=int, default=40)
+    parser.add_argument('--tau', '-tau', type=float, default=0.01)
     parser.add_argument('--files_per_time', '-fpt', type=int, default=5)
-    parser.add_argument('--num_batch_samples', '-nb', type=int, default=511)
+    parser.add_argument('--num_batch_samples', '-nb', type=int, default=1023)
     parser.add_argument('--max_iters', '-mi', type=int, default=1)
-    parser.add_argument('--test_gap', '-tg', type=int, default=3)
+    parser.add_argument('--test_gap', '-tg', type=int, default=1)
 
-    parser.add_argument('--buffer_size', '-buf', type=int, default=10000)
+    parser.add_argument('--buffer_size', '-buf', type=int, default=40000)
     parser.add_argument('--actor_lr', '-alr', type=float, default=0.0001)
     parser.add_argument('--critic_lr', '-clr', type=float, default=0.0001)
     parser.add_argument('--step_size', '-step', type=float, default=1.0)
     parser.add_argument('--beta', '-beta', type=float, default=1.0)
     parser.add_argument('--gamma', '-gamma', type=float, default=0.9)
-    parser.add_argument('--reward_range', '-range', type=int, default=2)
+    parser.add_argument('--reward_range', '-range', type=int, default=3)
     args = vars(parser.parse_args())
     utils.print_args(args)
     return args
